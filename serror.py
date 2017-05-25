@@ -1,12 +1,12 @@
 class SkimpyError(BaseException):
-    def __init__(self,l,c,reason):
-        self.line = l
-        self.col = c
-        self.reason = reason
-
-    def __init__(self,form,reason):
-        self.line = form.line
-        self.col = form.col
+    def __init__(self,context,reason):
+        if isinstance(context,tuple) or isinstance(context,list):
+            self.line = context[0]
+            self.col = context[1]
+        else: #object
+            self.line = context.line
+            self.col = context.col
+            
         self.reason = reason
 
     def __str__(self):

@@ -56,7 +56,7 @@ class SkimpyPrescanContext(object):
         self.mark = 0 # Beginning of last token
 
     def get_error(self,reason):
-        return SkimpyError(self.lc[0],self.lc[1],reason)
+        return SkimpyError(self.lc,reason)
         
     def on_token_end(self):
         # Slice the token and add it
@@ -82,7 +82,8 @@ class SkimpyPrescanContext(object):
         return self.idx - self.mark
 
 def is_extended(ch):
-    return ch == "+" or ch == "*" or ch == "/" or ch == "-" or ch == "_" or ch == "<" or ch == ">" or ch == "?" or ch == "!" or ch == "'"
+    return ch == "+" or ch == "*" or ch == "/" or ch == "-" or ch == "_" or ch == "<" or ch == ">" or ch == "?" or ch == "!" or ch == "'"\
+           or ch == '=' or ch == '<' or ch == '>'
 
 # not applicable for text between quotes
 def classify_char(ch):
@@ -239,14 +240,14 @@ def skimpy_scan(t_str):
             operations.append(python_bind(sbuilder.push, token))
         elif token.text == ")":
             if not lp_stack:
-                raise SkimpyError(token.l,token.c,'unmatched right parenthesis')
+                raise SkimpyError(token,'unmatched right parenthesis')
             lp_stack.pop()
             operations.append(sbuilder.pop)  # Nothing to bind, pop takes no arguments
         else:
             if token.text and token.text[0] == '"':
                 # Quoted text
                 if token.text[-1] != '"':
-                    raise SkimpyError(token.l,token.c,'unmatched quotation')
+                    raise SkimpyError(token,'unmatched quotation')
                 # We need to save the quotation as a prefix, because strings make up a special type
                 operations.append(python_bind(sbuilder.append,slice_token(token,0,-1)))
             else:

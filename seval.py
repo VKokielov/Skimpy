@@ -102,6 +102,32 @@ class SkimpySequence(SkimpyForm):
         # Return the last value evaluated
         return self.evaluate_subnodes(env)[-1]        
 
+class SkimpyIf(SkimpyForm):
+    def __init__(self,form,cond,consequence,alternative):
+        if alternative is not None:
+            n_subnodes = 3
+        else:
+            n_subnodes = 2
+
+        super(SkimpyIf,self).__init__(form,n_subnodes)
+        self.set_subnode(cond,0)
+        self.set_subnode(consequence,1)
+        if alternative is not None:
+            self.set_subnode(alternative,2)
+
+    def seval(self,env):
+        cond_result = self.evaluate_subnode(env,0)
+
+        if cond_result.pythonify():
+            return self.evaluate_subnode(env,1)
+        else:
+            # Evaluating alternative
+            alternative = self.get_subnode(2)
+            if alternative is not None:
+                return self.evaluate_subnode(env,2)
+            else:
+                return sdata.false_value
+
 # A form-wrapper around a literal value.
 # It must be converted to a python value before it is bound.
 class SkimpyLiteral(SkimpyForm):
@@ -187,6 +213,16 @@ def analyze_define(form):
 def analyze_apply(form):
     return SkimpyApply(form, parse.generate_subnodes(form))
 
+def analyze_if(form):
+    cond = parse.get_subnode(form,1)
+    consequent = parse.get_subnode(form,2)
+    alternative = parse.get_subnode(form,3)
+
+    if cond is None or consequent is None:
+        raise SkimpyError(form, 'ill-formed if')
+
+    return SkimpyIf(form,cond,consequent,alternative)
+
 def analyze_literal(form):
     if parse.is_number(form):
         return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
@@ -202,7 +238,8 @@ def analyze_sequence(form):
 # Initialize a module-level dictionary mapping token values to factories (classes)
 special_map = {"lambda" : analyze_lambda,
                "define" : analyze_define,
-                "begin" : analyze_sequence}
+                "begin" : analyze_sequence,
+               "if" : analyze_if}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss

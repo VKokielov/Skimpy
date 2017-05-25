@@ -89,6 +89,19 @@ class SkimpyString(SkimpyValue):
     def pythonify(self):
         return self.value
 
+class SkimpyBool(SkimpyValue):
+    def __init__(self,value):
+        self.value = value
+
+    def pythonify(self):
+        return self.value
+
+    def __bool__(self):
+        return self.value
+
+true_val = SkimpyBool(True)
+false_val = SkimpyBool(False)
+    
 class SkimpyNil(SkimpyValue):
     pass
 
@@ -118,6 +131,11 @@ def skimpify(python_value):
     # Lists are not represented.  Construct lists with the list builder.
     if isinstance(python_value,numbers.Number):
         return SkimpyNumber(python_value)
+    elif isinstance(python_value,bool):
+        if python_value:
+            return true_value
+        else:
+            return false_value
     else:
         return python_value  # By default, return what I get (as with pythonify)
 
