@@ -1,2 +1,2 @@
 # Skimpy
-A Scheme parser in Python 3
+A Scheme interpreter in Python 3
