@@ -1,16 +1,17 @@
 import senv
 import parse
 import sdata
+import seval
 import operator
-import builtins
+#import sbuiltins
 import itertools
 
 def bind_builtin(env,name,pyf,check_arg_count=None, is_raw=False):
     proc = sdata.PythonProc(env,name,pyf,check_arg_count, is_raw)
-    env.bind(name,pyf)
+    env.bind(name,proc)
 
 def make_accumulator(op):
-    def accumulate(*inputs):
+    def accumulate(env,token,*inputs):
         if not inputs:
             return None
         _v = inputs[0]
@@ -45,9 +46,13 @@ def execute_code(text,env):
     for expr in parse.generate_subnodes(tree):
         result = seval.skimpy_eval(expr,env)
 
-    print ('eval: ' + result[0])
+    print ('eval: ' + str(result[0]) + '\n')
 
 if __name__ == "__main__":
     global_env = prepare()
 
-    
+    text_square = "(define (square x) (* x x))"
+    execute_code(text_square,global_env)
+
+    text_do_square = "(square 5)"
+    execute_code(text_do_square,global_env)

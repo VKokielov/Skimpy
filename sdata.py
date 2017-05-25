@@ -1,10 +1,14 @@
 import senv
+import seval
 import parse
 import numbers
+from serror import SkimpyError
 
 class SkimpyValue(object):
     def pythonify(self):
         return self # default -- identity
+    def __str__(self):
+        return str(self.pythonify())
 
 class SkimpyProc(SkimpyValue):
     def __init__(self,enc_env,name,arglist,text):
@@ -20,7 +24,7 @@ class SkimpyProc(SkimpyValue):
         # The 'call' function is all that's different between procedure types
         # The returned value is passed back to eval.
         # We are bootstrapping the return to Python.
-        new_env = sdata.bind_arglist(token,self.enc_env,values)
+        new_env = senv.bind_arglist(token,self.enc_env,self.arglist,values)
         
         return self.call(token,new_env)
 
@@ -40,17 +44,18 @@ class PythonProc(SkimpyProc):
     def __init__(self,enc_env,name,pyf,check_arg_count=None,is_raw = False):
         
         super(PythonProc,self).__init__(enc_env,name,arglist=None,text=None)
+        self.check_args = check_arg_count
         self.pyf = pyf
         self.is_raw = is_raw  # Do not pythonify values -- pass the list of objects
 
     def apply(self,token,exec_env,values):
-        if check_arg_count is not None:
-            if isinstance(check_arg_count,tuple):
-                min_args = check_arg_count[0]
-                max_args = check_arg_count[1]
+        if self.check_args is not None:
+            if isinstance(self.check_args,tuple):
+                min_args = self.check_args[0]
+                max_args = self.check_args[1]
             else:
-                min_args = check_arg_count
-                max_args = check_arg_count
+                min_args = self.check_args
+                max_args = self.check_args
                 
             if min_args is not None and len(values) < min_args:
                 raise SkimpyError(token, 'too few arguments for builtin procedure')
@@ -95,12 +100,13 @@ class SkimpyPair(SkimpyValue):
         self.car = car
         self.cdr = cdr
 
-# Just a tag class for ERR
-class SkimpyError(SkimpyValue):
-    pass
+# A value that doesn't count as a return, but has a string description
+class SkimpyNonReturn(SkimpyValue):
+    def __init__(self,tag):
+        self.tag = tag
 
-ERR = SkimpyError()
-
+    def __str__(self):
+        return self.tag
 # Conversions
 # NOTE:  skimpify and pythonify are shallow.  For example, lists will not turn into python lists automatically
 # For deep conversions you must implement your own functions.

@@ -12,7 +12,7 @@ class SkimpyToken(object):
  #       print ('building ' + str(self))
 
     def __str__(self): # Printable representation
-        return self.text + " @ {" + str(self.l) + ":" + str(self.c) + "}"
+        return self.text + " @ {" + str(self.line) + ":" + str(self.col) + "}"
 
     def str_pretty(self):
         if self.text and self.text[0] == '"':

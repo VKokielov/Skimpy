@@ -34,16 +34,16 @@ class SkimpyEnvironment(object):
 
 # For other kinds of arglists, such as the vararg, reimplement this function
 
-def bind_arglist(self,call_token,env,arglist,values):
+def bind_arglist(call_token,env,arglist,values):
  
-    if len(values) < len(self.arglist):
+    if len(values) < len(arglist):
         raise SkimpyError(call_token, 'too few arguments for procedure')
 
-    if len(values) > len(self.arglist):
+    if len(values) > len(arglist):
         raise SkimpyError(call_token, 'too many arguments for procedure')
     
-    new_env = SkimpyEnv(env)
-    for key,arg in zip(self.arg_names,values):
+    new_env = SkimpyEnvironment(env)
+    for key,arg in zip(arglist,values):
         new_env.bind(key,arg)
 
     return new_env

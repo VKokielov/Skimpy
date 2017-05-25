@@ -1,9 +1,10 @@
 import parse
 import sdata
+from serror import SkimpyError
 
 # This module contains all the evaluation rules for Scheme, including the two most important ones, lambda and apply
 class SkimpyForm(object):
-    def __init__(self,form,n_subnodes):
+    def __init__(self,form,n_subnodes=None):
         if n_subnodes is not None:
             self.subnode_values = [None] * n_subnodes
         else:
@@ -16,20 +17,23 @@ class SkimpyForm(object):
 
         self.subnode_values[index] = form
 
+    def get_subnode(self,index):
+        return self.subnode_values[index]
+
     def subnodes(self,iterable):
         self.subnode_values = list(iterable)
 
     def evaluate_subnode(self,env,idx):
-        eval_result,self.subnode_values[idx] = seval.skimpy_eval(self.subnode_values[idx],env)
+        eval_result,self.subnode_values[idx] = skimpy_eval(self.subnode_values[idx],env)
         return eval_result
     
     def evaluate_subnodes(self,env,range_l=0,range_u=None):
         if range_u is None:
-            range_u = len)self.subnode_values)
+            range_u = len(self.subnode_values)
 
         result_list = []
         for idx in range(range_l,range_u):
-            result_list.append(evaluate_subnode(self,env,idx))
+            result_list.append(self.evaluate_subnode(env,idx))
 
         return result_list
 
@@ -43,13 +47,13 @@ class SkimpyLambda(SkimpyForm):
         self.set_subnode(text,0)
         self.proc_id = 1
         
-    def seval(env):
+    def seval(self,env):
         # The text node is not automatically translated here.  What this means is that, unless you pretranslate the form,
         # the text will be retranslated each time a different actual procedure with a separate environment is applied.
 
         # On the other hand, the CompoundProc object below evaluates the text and therefore caches the translation after
         # the first evaluation.
-        to_ret = sdata.CompoundProc(env,'#compound-procedure-' + str(self.proc_id), self.argnames, self.text_node)
+        to_ret = sdata.CompoundProc(env,'#compound-procedure-' + str(self.proc_id), self.argnames, self.get_subnode(0))
         self.proc_id += 1
         return to_ret
 
@@ -61,24 +65,28 @@ class SkimpyApply(SkimpyForm):
         # note to self: the parsed program text should be immutable
         self.subnodes(subexprs)
 
-    def seval(env):
+    def seval(self,env):
         # Evaluate the operator, then evaluate the operands, then proceed to call the operator
         # Use the helper function in the base class
         op_to_call = self.evaluate_subnode(env,0)
+
+        if not isinstance(op_to_call,sdata.SkimpyProc):
+            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable')
+        
         op_arguments = self.evaluate_subnodes(env,1,None)
         return op_to_call.apply(self.original_form,env,op_arguments)
 
 class SkimpyDefine(SkimpyForm):
     def __init__(self,form,key,expression):
         super(SkimpyDefine,self).__init__(form,1)
-        self.key = key
+        self.key = parse.get_text(key)
         self.set_subnode(expression,0)
 
-    def seval(env):
+    def seval(self,env):
         bound_value = self.evaluate_subnode(env,0)
         # Add a binding to the environment
         env.bind(self.key,bound_value)
-        return sdata.ERR
+        return sdata.SkimpyNonReturn(self.key)
 
 class SkimpySequence(SkimpyForm):
     def __init__(self,form,subexprs):
@@ -90,7 +98,7 @@ class SkimpySequence(SkimpyForm):
         # Store the expressions just as in 'apply'.  Later evaluate them in order
         self.subnodes(subexprs)
 
-    def seval(env):
+    def seval(self,env):
         # Return the last value evaluated
         return self.evaluate_subnodes(env)[-1]        
 
@@ -104,7 +112,7 @@ class SkimpyLiteral(SkimpyForm):
         
         self._v = factory(python_value)
 
-    def seval(env):
+    def seval(self,env):
         return self._v
 
 # A form-wrapper around a Scheme symbol or variable
@@ -113,10 +121,10 @@ class SkimpyVariable(SkimpyForm):
         super(SkimpyVariable,self).__init__(form)       
         self.varname = parse.get_text(form)
 
-    def seval(env):
+    def seval(self,env):
         binding = env.find(self.varname)
         if binding is None:
-            raise SkimpyError(skimpy_form, 'unbound variable in this context: ' + self.varname)
+            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
 
         return binding       
 
@@ -148,49 +156,53 @@ def analyze_lambda(form):
         return SkimpyLambda(form,argnames,\
                             analyze_proc_body(form,parse.generate_subnodes(form,2)) )
 
-    
-    # If there is only one expression, return the expression.  If there are more, 
 def analyze_define(form):
     # Two possibilities.  Regular define or regular define with lambda
     # Example:  (1) (define x 5)
     # (2) (define (add x y) (print 'adding') (+ x y))
     
     form_subnodes = parse.generate_subnodes(form,1)
-    
-    defined_obj = next(form_subnodes)
+    try:    
+        defined_obj = next(form_subnodes)
 
-    if defined_obj is None or define_text is None:
-        raise SkimpyError(form, 'define: invalid syntax')
+        if not parse.is_atom(defined_obj):
+            obj_nodes = parse.generate_subnodes(defined_obj)
+            try:
+                var_token = next(obj_nodes)
+            except StopIteration:
+                raise SkimpyError(defined_obj, 'define: invalid syntax')
+            
+            # Construct the lambda from the remainder
+            argnames = [parse.get_text(name_token) for name_token in obj_nodes]
+            proc_text = analyze_proc_body(form,form_subnodes)
+            def_expr = SkimpyLambda(form,argnames,proc_text)
+        else:
+            var_token = defined_obj
+            def_expr = next(form_subnodes)
+    except StopIteration:
+        raise SkimpyError(form, 'invalid syntax')
+        
+    return SkimpyDefine(form,var_token,def_expr)
 
-    if not parse.is_atom(defined_obj):
-        obj_nodes = parse.generate_subnodes(defined_obj)
-        try:
-            var_name = next(obj_nodes)
-        except StopIteration:
-            raise SkimpyError(defined_obj, 'define: invalid syntax')
-        
-        # Construct the lambda from the remainder
-        argnames = list(obj_nodes)
-        proc_text = analyze_proc_body(form,form_subnodes)
-        def_expr = SkimpyLambda(form,argnames,proc_text)
-    else:
-        var_name = defined_obj
-        def_expr = next(form_subnodes)
-        
-    return SkimpyDefine(form,var_name,def_expr)
+def analyze_apply(form):
+    return SkimpyApply(form, parse.generate_subnodes(form))
 
 def analyze_literal(form):
     if parse.is_number(form):
-        return SkimpyLiteral(form,SkimpyNumber,parse.to_number(form))
+        return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
     elif parse.is_string(form):
-        return SkimpyLiteral(form,SkimpyString,parse.to_string(form))
+        return SkimpyLiteral(form,sdata.SkimpyString,parse.to_string(form))
 
 def analyze_sequence(form):
     # A sequence of expressions
-    
+    return SkimpySequence(form, parse.generate_subnodes(form,1))
+
+
+
 # Initialize a module-level dictionary mapping token values to factories (classes)
-special_map["lambda"] = analyze_lambda
-special_map["define"] = analyze_define
+special_map = {"lambda" : analyze_lambda,
+               "define" : analyze_define,
+                "begin" : analyze_sequence}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss
@@ -217,9 +229,6 @@ def translate(form):
     # get_form_factory performs a superficial analysis and returns, except in one case, an analyze_... function as the factory.
     # translate() proceeds to call the factory, which analyzes the form more deeply and produces the right object
     if not isinstance(form,SkimpyForm):
-        if parse.is_atom(form):
-           return None
-
         cl = get_form_factory(form)  # Analyze the syntax of the node to find the right factory
 
         # Construct the form and translate it superficially
@@ -246,7 +255,7 @@ def skimpy_eval(skimpy_form,env):
     # It is possible by using recursion to translate the entire CST into an AST right after parsing,
     # i.e. to translate eagerly (and greedily).  In this case form will always be an AST node.  See recursive_translate() below.
     
-    translated_form = sform.translate(skimpy_form)
+    translated_form = translate(skimpy_form)
     to_return = translated_form.seval(env)
 
     return (to_return, translated_form)
