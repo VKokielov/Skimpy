@@ -126,6 +126,7 @@ class SkimpyIf(SkimpyForm):
         if alternative is not None:
             self.set_subnode(alternative,2)
 
+
     def seval(self,env,caller_id):
         cond_result = self.evaluate_subnode(env,0)
 
@@ -254,13 +255,14 @@ def analyze_cond(form):
     for node in parse.generate_subnodes_reversed(form,start_idx,1):
         alternative = SkimpyIf(form,parse.get_subnode(node,0), parse.get_subnode(node,1),alternative)
 
+    alternative.radiotrace = True
     return alternative
 
 def analyze_literal(form):
     if parse.is_number(form):
         return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
     elif parse.is_string(form):
-        return SkimpyLiteral(form,sdata.SkimpyString,parse.to_string(form))
+        return SkimpyLiteral(form,sdata.SkimpyString,parse.to_python_string(form))
 
 def analyze_sequence(form):
     # A sequence of expressions
@@ -333,15 +335,16 @@ def skimpy_eval(skimpy_form,env,caller_id = None):
     # (Exceptions in Python must be fairly performant; StopIteration is still used to signal the end of any iteration.)
 
     final_eval = False
+    original_translated_form = translate(skimpy_form)
 
+    translated_form = original_translated_form
     while not final_eval:
-        translated_form = translate(skimpy_form)
         try:
             to_return = translated_form.seval(env,caller_id)
             final_eval = True
         except ContinuationException as ce:
             # replace the form
             skimpy_form = ce.form
+            translated_form = translate(skimpy_form)
 
-
-    return (to_return, translated_form)
+    return (to_return, original_translated_form)

@@ -176,7 +176,18 @@ def get_text(token):
 def is_number(token):
     # Note: we do not create empty tokens as they cannot mean anything
     # Note 2: For now, boot-strap the number representation to Python's
-    return is_atom(token) and get_text(token)[0].isnumeric()
+    if not is_atom(token):
+        return False
+
+    text = get_text(token)
+
+    # Try to convert the number to a float
+    # This stupidity arises because Python does not give feasibility predicates to go with its coercers.
+    try:
+        cf = float(text)
+        return True
+    except ValueError:
+        return False
 
 def to_number(token):
     # This wrapper around Python's str->num converter is to declare the policy

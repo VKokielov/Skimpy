@@ -7,6 +7,7 @@ import operator
 import itertools
 import os
 import fileinput
+import sys
 from serror import SkimpyError
 
 def execute_code(text,env,interactive=False):
@@ -14,14 +15,13 @@ def execute_code(text,env,interactive=False):
 
     for expr in parse.generate_subnodes(tree):
         result = seval.skimpy_eval(expr,env)
-
-    if interactive:
-        print ('>> ' + str(result[0]) + '\n')
+        if interactive:
+            print ('>> ' + str(result[0]) + '\n')
 
 def load_file(env,token,filename):
     # Execute a file in its entirety
     if not os.path.isfile(filename):
-        raise SkimpyError(token,'include: could not find file ' + filename)
+        raise SkimpyError(token,'load: could not find file ' + filename)
 
     ptext = None
     with open(filename,'r') as prog_file:
@@ -30,6 +30,18 @@ def load_file(env,token,filename):
     # NOTE:  We execute file inside the current environment, not the top-level
     execute_code(ptext,env)
     return sdata.SkimpyNonReturn('<unspecified>')
+
+def run_file(env,filename):
+    # As above but interactive from the interpreter
+    if not os.path.isfile(filename):
+        raise ValueError('could not find file ' + filename)
+
+    ptext = None
+    with open(filename,'r') as prog_file:
+        ptext = prog_file.read()
+
+    # NOTE:  We execute file inside the current environment, not the top-level
+    execute_code(ptext,env,interactive=True)
 
 def bind_builtin(env,name,pyf,check_arg_count=None, is_raw=False):
     proc = sdata.PythonProc(env,name,pyf,check_arg_count, is_raw)
@@ -62,11 +74,19 @@ def is_equal(env,token,v1,v2):
 
 def is_less(env,token,v1,v2):
     # simple, bootstrapped initial version
+#    print ('<:' + str(v1) + ' vs ' + str(v2))
     return v1 < v2
 
 def is_greater(env,token,v1,v2):
     # simple, bootstrapped initial version
+#    print ('>:' + str(v1) + ' vs ' + str(v2))    
     return v1 > v2
+
+def display_text(env,token,*args):
+    for arg in args:
+        sys.stdout.write(str(arg) + ' ')
+    sys.stdout.write('\n')
+    return sdata.SkimpyNonReturn('<unspecified>')
 
 def prepare():
     # Creates a new global environment and adds bindings for
@@ -89,37 +109,16 @@ def prepare():
     bind_builtin(global_env,'<',is_less,check_arg_count=2)
     bind_builtin(global_env,'>',is_greater,check_arg_count=2)
     bind_builtin(global_env,'load',load_file,check_arg_count=1)
+    bind_builtin(global_env,'print',display_text,check_arg_count=(1,None))
 
     global_env.bind('#t',sdata.true_val)
     global_env.bind('#f',sdata.false_val)
 
     return global_env
 
-
 if __name__ == "__main__":
     global_env = prepare()
 
     # Sit in a loop and read stdin until eof
-    #for line in fileinput.input():
-    #    execute_code(line,global_env,interactive=True)
-    load_file(global_env,None,"C:\\Users\\vkramer\\Documents\\skimpy_test.scm")
+    run_file(global_env,"C:\\Users\\vkramer\\Documents\\skimpy_test.scm")
 
-#    text_square = "(define (square x) (* x x))"
-#    execute_code(text_square,global_env)
-
-#    text_do_square = "(square 5)"
-#    execute_code(text_do_square,global_env)
-
-#    text_factorial = "(define (factorial n)\
-#           (if (= n 1) 1 (* n (factorial (- n 1)))))"
-#    execute_code(text_factorial,global_env)
-
-#    text_iter_factorial = "(define (fac-iter c n)\
-#                          (if (= n 0) c (fac-iter (* c n) (- n 1))))"
-#    execute_code(text_iter_factorial,global_env)
-    
-    #text_do_factorial = "(factorial 10)"
-    #execute_code(text_do_factorial,global_env)
-    
-#    text_do_iter_f = "(fac-iter 1 10)"
-#    execute_code(text_do_iter_f,global_env)
