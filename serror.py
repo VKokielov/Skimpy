@@ -4,8 +4,12 @@ class SkimpyError(Exception):
             self.line = context[0]
             self.col = context[1]
         else: #object
-            self.line = context.line
-            self.col = context.col
+            if context is None:
+                self.line = 0
+                self.col = 0
+            else:
+                self.line = context.line
+                self.col = context.col
             
         self.reason = reason
 

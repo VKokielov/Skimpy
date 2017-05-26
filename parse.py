@@ -83,7 +83,7 @@ class SkimpyPrescanContext(object):
 
 def is_extended(ch):
     return ch == "+" or ch == "*" or ch == "/" or ch == "-" or ch == "_" or ch == "<" or ch == ">" or ch == "?" or ch == "!" or ch == "'"\
-           or ch == '=' or ch == '<' or ch == '>'
+           or ch == "=" or ch == "<" or ch == ">" or ch == "."
 
 # not applicable for text between quotes
 def classify_char(ch):
@@ -197,9 +197,19 @@ def generate_subnodes(concrete_node,start = 0):
         for idx in range(start,len(concrete_node.text)):
             yield concrete_node.text[idx]
 
+def generate_subnodes_reversed(concrete_node,start = None, end = 0):
+    if start is None:
+        start = len(concrete_node.text) - 1
+    elif start < 0:  # python style
+        start = len(concrete_node.text) + start
+        
+    if not is_atom(concrete_node):
+        for idx in range(start,end - 1,-1):
+            yield concrete_node.text[idx]
+
 def get_subnode(concrete_node,index):
     if not is_atom(concrete_node):
-        if index < len(concrete_node.text):
+        if index < len(concrete_node.text) and index >= -len(concrete_node.text):
             return concrete_node.text[index]
         else:
             raise ValueError('concrete node index out of bounds')

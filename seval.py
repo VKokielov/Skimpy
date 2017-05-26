@@ -234,6 +234,28 @@ def analyze_if(form):
 
     return SkimpyIf(form,cond,consequent,alternative)
 
+def analyze_cond(form):
+    # Build up a list of conditions and consequents
+    # We can simplify everything by building up a chain of ifs-elses from the last alternative
+    # This is not bad in computation either because ifs raise ContinuationExceptions.
+
+    # TODO:  Syntax checks!!!!
+
+    last_cond = parse.get_subnode(form,-1)
+
+    alternative = None
+    start_idx = -1
+    final_test = parse.get_subnode(last_cond,0)
+    if parse.is_atom(final_test) and parse.get_text(final_test) == "else":
+        alternative = parse.get_subnode(last_cond,1)
+        start_idx = -2
+
+    # Ifs with consequents
+    for node in parse.generate_subnodes_reversed(form,start_idx,1):
+        alternative = SkimpyIf(form,parse.get_subnode(node,0), parse.get_subnode(node,1),alternative)
+
+    return alternative
+
 def analyze_literal(form):
     if parse.is_number(form):
         return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
@@ -244,13 +266,12 @@ def analyze_sequence(form):
     # A sequence of expressions
     return SkimpySequence(form, parse.generate_subnodes(form,1))
 
-
-
 # Initialize a module-level dictionary mapping token values to factories (classes)
 special_map = {"lambda" : analyze_lambda,
                "define" : analyze_define,
                 "begin" : analyze_sequence,
-               "if" : analyze_if}
+               "if" : analyze_if,
+               "cond" : analyze_cond}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss
