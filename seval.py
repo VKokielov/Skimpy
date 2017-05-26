@@ -2,6 +2,11 @@ import parse
 import sdata
 from serror import SkimpyError
 
+# Allow for tail-optimization by passing upstream an expression to be evaluated instead of a given one
+class ContinuationException(Exception):
+    def __init__(self,form):
+        self.form = form
+
 # This module contains all the evaluation rules for Scheme, including the two most important ones, lambda and apply
 class SkimpyForm(object):
     def __init__(self,form,n_subnodes=None):
@@ -24,8 +29,14 @@ class SkimpyForm(object):
         self.subnode_values = list(iterable)
 
     def evaluate_subnode(self,env,idx):
-        eval_result,self.subnode_values[idx] = skimpy_eval(self.subnode_values[idx],env)
+        eval_result,self.subnode_values[idx] = skimpy_eval(self.subnode_values[idx],env,None)
         return eval_result
+
+    def evaluate_subnode_as_continuation(self,env,idx):
+        # Force an explicit translation of the subnode so we can cache the reference
+        self.subnode_values[idx] = translate(self.subnode_values[idx])
+        # Raise a ContinuationException
+        raise ContinuationException(self.subnode_values[idx])
     
     def evaluate_subnodes(self,env,range_l=0,range_u=None):
         if range_u is None:
@@ -47,7 +58,7 @@ class SkimpyLambda(SkimpyForm):
         self.set_subnode(text,0)
         self.proc_id = 1
         
-    def seval(self,env):
+    def seval(self,env,caller_id):
         # The text node is not automatically translated here.  What this means is that, unless you pretranslate the form,
         # the text will be retranslated each time a different actual procedure with a separate environment is applied.
 
@@ -65,7 +76,7 @@ class SkimpyApply(SkimpyForm):
         # note to self: the parsed program text should be immutable
         self.subnodes(subexprs)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         # Evaluate the operator, then evaluate the operands, then proceed to call the operator
         # Use the helper function in the base class
         op_to_call = self.evaluate_subnode(env,0)
@@ -74,7 +85,7 @@ class SkimpyApply(SkimpyForm):
             raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable')
         
         op_arguments = self.evaluate_subnodes(env,1,None)
-        return op_to_call.apply(self.original_form,env,op_arguments)
+        return op_to_call.apply(self.original_form,env,caller_id,op_arguments)
 
 class SkimpyDefine(SkimpyForm):
     def __init__(self,form,key,expression):
@@ -82,7 +93,7 @@ class SkimpyDefine(SkimpyForm):
         self.key = parse.get_text(key)
         self.set_subnode(expression,0)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         bound_value = self.evaluate_subnode(env,0)
         # Add a binding to the environment
         env.bind(self.key,bound_value)
@@ -98,7 +109,7 @@ class SkimpySequence(SkimpyForm):
         # Store the expressions just as in 'apply'.  Later evaluate them in order
         self.subnodes(subexprs)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         # Return the last value evaluated
         return self.evaluate_subnodes(env)[-1]        
 
@@ -115,16 +126,16 @@ class SkimpyIf(SkimpyForm):
         if alternative is not None:
             self.set_subnode(alternative,2)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         cond_result = self.evaluate_subnode(env,0)
 
         if cond_result.pythonify():
-            return self.evaluate_subnode(env,1)
+            self.evaluate_subnode_as_continuation(env,1)
         else:
             # Evaluating alternative
             alternative = self.get_subnode(2)
             if alternative is not None:
-                return self.evaluate_subnode(env,2)
+                self.evaluate_subnode_as_continuation(env,2)
             else:
                 return sdata.false_value
 
@@ -138,7 +149,7 @@ class SkimpyLiteral(SkimpyForm):
         
         self._v = factory(python_value)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         return self._v
 
 # A form-wrapper around a Scheme symbol or variable
@@ -147,7 +158,7 @@ class SkimpyVariable(SkimpyForm):
         super(SkimpyVariable,self).__init__(form)       
         self.varname = parse.get_text(form)
 
-    def seval(self,env):
+    def seval(self,env,caller_id):
         binding = env.find(self.varname)
         if binding is None:
             raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
@@ -273,7 +284,7 @@ def translate(form):
     else:
         return form
 
-def skimpy_eval(skimpy_form,env):
+def skimpy_eval(skimpy_form,env,caller_id = None):
 
     # In this interpreter, the form classes above delimit evaluation rules for various parts.
     # Form objects are nodes -- either in the concrete tree of tokens built by parse.skimpy_scan, or the AST nodes that derive from
@@ -291,8 +302,25 @@ def skimpy_eval(skimpy_form,env):
 
     # It is possible by using recursion to translate the entire CST into an AST right after parsing,
     # i.e. to translate eagerly (and greedily).  In this case form will always be an AST node.  See recursive_translate() below.
-    
-    translated_form = translate(skimpy_form)
-    to_return = translated_form.seval(env)
+
+    # NOTE regarding continuations:
+    # To facilitate tail recursion, we can return control here with an exception instead of calling this function recursively
+    # The caller_id value passed in during procedure application will be equal to the procedure object.  Thus if some
+    # subexpression simplifies to a recursive call to the same function, we will rebind the arguments in the environment
+    # and return here, instead of getting deeper into the recursion.
+
+    # (Exceptions in Python must be fairly performant; StopIteration is still used to signal the end of any iteration.)
+
+    final_eval = False
+
+    while not final_eval:
+        translated_form = translate(skimpy_form)
+        try:
+            to_return = translated_form.seval(env,caller_id)
+            final_eval = True
+        except ContinuationException as ce:
+            # replace the form
+            skimpy_form = ce.form
+
 
     return (to_return, translated_form)

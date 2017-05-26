@@ -6,9 +6,16 @@ from serror import SkimpyError
 
 class SkimpyValue(object):
     def pythonify(self):
+        # print ('pythonifying self')
         return self # default -- identity
+    
     def __str__(self):
-        return str(self.pythonify())
+        # When pythonify returns self, we are in catch-22
+        python_val = self.pythonify()
+        if python_val == self:
+            return super(SkimpyValue,self).__str__()
+        else:
+            return str(python_val)
 
 class SkimpyProc(SkimpyValue):
     def __init__(self,enc_env,name,arglist,text):
@@ -16,28 +23,34 @@ class SkimpyProc(SkimpyValue):
         self.name = name
         self.arglist = arglist
         self.text = text
+
+class CompoundProc(SkimpyProc):
+    def __init__(self,*args):
+        super(CompoundProc,self).__init__(*args)
+
+    def __str__(self):
+        return self.name
     
-    def apply(self,token,exec_env,values):
+    def apply(self,token,exec_env,caller_id,values):
         # NOTE:  exec_env is passed through from eval in case we ever need it, but we extend the environment in which we evaluated the lambda!!
         
         # Extend the environment and call the procedure with the variables bound
         # The 'call' function is all that's different between procedure types
         # The returned value is passed back to eval.
         # We are bootstrapping the return to Python.
-        new_env = senv.bind_arglist(token,self.enc_env,self.arglist,values)
         
-        return self.call(token,new_env)
+        if caller_id == self:
+            # This is the same procedure.  Do a continuation
+            # That is, rebind the arguments into the calling environment and raise a ContinuationException
+            senv.bind_arglist(token,exec_env,self.arglist,values,rebind=True)
+            self.text = seval.translate(self.text)  # As in seval, explicit translation to cache the analyzed text if it was not cached on the form
+            raise seval.ContinuationException(self.text)
+        else:
+            new_env = senv.bind_arglist(token,self.enc_env,self.arglist,values)
+            to_return,self.text = seval.skimpy_eval(self.text,new_env,self)
+            
+        return to_return    
 
-class CompoundProc(SkimpyProc):
-    def __init__(self,*args):
-        super(CompoundProc,self).__init__(*args)
-
-    def call(self,token,env):
-        # Evaluate the body of the text in the new environment
-        # Store the new text once (and if) it's translated
-        
-        to_return,self.text = seval.skimpy_eval(self.text,env)
-        return to_return
 
 # To users these are indistinguishable if 'apply' is used to call a procedure
 class PythonProc(SkimpyProc):
@@ -48,7 +61,10 @@ class PythonProc(SkimpyProc):
         self.pyf = pyf
         self.is_raw = is_raw  # Do not pythonify values -- pass the list of objects
 
-    def apply(self,token,exec_env,values):
+    def __str__(self):
+        return 'primitive-procedure ' + self.name
+    
+    def apply(self,token,exec_env,caller_id,values):
         if self.check_args is not None:
             if isinstance(self.check_args,tuple):
                 min_args = self.check_args[0]

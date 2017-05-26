@@ -25,7 +25,19 @@ class SkimpyEnvironment(object):
 
     def find_private(self,key):
         return self.pmapping[key]        
+
+    def __str__(self):
+        return str_dict(self.mapping) + "|" + str_dict(self.pmapping) + ":" + str(self.enclosing)
+
+def str_dict(dictionary):
+    if dictionary is None:
+        return "None"
+    
+    rv = "["
+    for k,v, in dictionary.items():
+        rv += str(k) + ":" + str(v) + ", "
         
+    return rv
 
 # A list representing ordered arguments
 # To call a function, we use the bind function.  'Bind' takes a list
@@ -34,19 +46,24 @@ class SkimpyEnvironment(object):
 
 # For other kinds of arglists, such as the vararg, reimplement this function
 
-def bind_arglist(call_token,env,arglist,values):
- 
+def bind_arglist(call_token,env,arglist,values,rebind=False):
+
+    # Note: when rebinding for a tail recursion, this check ensures that we don't leave any 'stale' arguments from the previous call
     if len(values) < len(arglist):
         raise SkimpyError(call_token, 'too few arguments for procedure')
 
     if len(values) > len(arglist):
         raise SkimpyError(call_token, 'too many arguments for procedure')
-    
-    new_env = SkimpyEnvironment(env)
-    for key,arg in zip(arglist,values):
-        new_env.bind(key,arg)
 
-    return new_env
+    if not rebind:
+        bind_env = SkimpyEnvironment(env)
+    else:
+        bind_env = env
+        
+    for key,arg in zip(arglist,values):
+        bind_env.bind(key,arg)
+    
+    return bind_env # note: if rebind=True, this returns env again!
             
 
 

@@ -1,4 +1,4 @@
-class SkimpyError(BaseException):
+class SkimpyError(Exception):
     def __init__(self,context,reason):
         if isinstance(context,tuple) or isinstance(context,list):
             self.line = context[0]

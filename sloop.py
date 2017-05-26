@@ -69,5 +69,12 @@ if __name__ == "__main__":
            (if (= n 1) 1 (* n (factorial (- n 1)))))"
     execute_code(text_factorial,global_env)
 
-    text_do_factorial = "(factorial 4)"
-    execute_code(text_do_factorial,global_env)
+    text_iter_factorial = "(define (fac-iter c n)\
+                          (if (= n 0) c (fac-iter (* c n) (- n 1))))"
+    execute_code(text_iter_factorial,global_env)
+    
+    #text_do_factorial = "(factorial 10)"
+    #execute_code(text_do_factorial,global_env)
+    
+    text_do_iter_f = "(fac-iter 1 10)"
+    execute_code(text_do_iter_f,global_env)
