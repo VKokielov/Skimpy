@@ -43,11 +43,14 @@ class CompoundProc(SkimpyProc):
             # This is the same procedure.  Do a continuation
             # That is, rebind the arguments into the calling environment and raise a ContinuationException
             senv.bind_arglist(token,exec_env,self.arglist,values,rebind=True)
-            self.text = seval.translate(self.text)  # As in seval, explicit translation to cache the analyzed text if it was not cached on the form
+            new_text = seval.translate(self.text)  # As in seval, explicit translation to cache the analyzed text if it was not cached on the form
+            self.text = new_text
             raise seval.ContinuationException(self.text)
         else:
             new_env = senv.bind_arglist(token,self.enc_env,self.arglist,values)
-            to_return,self.text = seval.skimpy_eval(self.text,new_env,self)
+            
+            to_return,new_text = seval.skimpy_eval(self.text,new_env,self)
+            self.text = new_text
             
         return to_return    
 
@@ -114,7 +117,7 @@ class SkimpyChar(SkimpyValue):
     def pythonify(self):
         return self.value
 
-class SkimpyBool(SkimpyValue):
+class _SkimpyBool(SkimpyValue):
     def __init__(self,value):
         self.value = value
 
@@ -124,9 +127,14 @@ class SkimpyBool(SkimpyValue):
     def __bool__(self):
         return self.value
 
-true_val = SkimpyBool(True)
-false_val = SkimpyBool(False)
-    
+true_val = _SkimpyBool(True)
+false_val = _SkimpyBool(False)
+
+def is_false(val):
+    # As a matter of policy there should only be one #f.
+    # But let's not depend on it
+    return isinstance(val,_SkimpyBool) and val.value == False
+
 class SkimpyNil(SkimpyValue):
     pass
 
@@ -154,13 +162,13 @@ class SkimpyNonReturn(SkimpyValue):
 def skimpify(python_value):
     # Represent numbers as SkimpyNumbers, strings as SkimpyStrings, and pairs -- tuples of size 2 -- as SkimpyPairs
     # Lists are not represented.  Construct lists with the list builder.
-    if isinstance(python_value,numbers.Number):
-        return SkimpyNumber(python_value)
-    elif isinstance(python_value,bool):
+    if isinstance(python_value,bool):
         if python_value:
-            return true_value
+            return true_val
         else:
-            return false_value
+            return false_val
+    elif isinstance(python_value,numbers.Number):
+        return SkimpyNumber(python_value)
     else:
         return python_value  # By default, return what I get (as with pythonify)
 

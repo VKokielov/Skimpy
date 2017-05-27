@@ -1,6 +1,7 @@
 import parse
 import sdata
 from serror import SkimpyError
+from enum import Enum
 
 # Allow for tail-optimization by passing upstream an expression to be evaluated instead of a given one
 class ContinuationException(Exception):
@@ -37,7 +38,11 @@ class SkimpyForm(object):
         self.subnode_values[idx] = translate(self.subnode_values[idx])
         # Raise a ContinuationException
         raise ContinuationException(self.subnode_values[idx])
-    
+
+    def translate_subnodes(self):
+        for idx in range(0,len(self.subnode_values)):
+            self.subnode_values[idx] = translate(self.subnode_values)
+            
     def evaluate_subnodes(self,env,range_l=0,range_u=None):
         if range_u is None:
             range_u = len(self.subnode_values)
@@ -132,7 +137,7 @@ class SkimpyIf(SkimpyForm):
     def seval(self,env,caller_id):
         cond_result = self.evaluate_subnode(env,0)
 
-        if cond_result.pythonify():
+        if not sdata.is_false(cond_result):
             self.evaluate_subnode_as_continuation(env,1)
         else:
             # Evaluating alternative
@@ -142,6 +147,31 @@ class SkimpyIf(SkimpyForm):
             else:
                 return sdata.false_value
 
+class QualifierType(Enum):
+    Q_OR = 0
+    Q_AND = 1
+
+class SkimpyQualifier(SkimpyForm):
+    def __init__(self,form,subexpressions,qualifier_type):
+        self.subnodes(subexpressions)
+        self.qualifier_type = qualifier_type
+
+    def seval(self,env,caller_id):
+        # Short-circuit evaluation
+        last_node_idx = len(self.subnode_values)-1
+        for idx in range(0,last_node_idx):
+            node = self.get_subnode(idx)
+            result = self.evaluate_subnode(env,idx)
+            if self.qualifier_type == QualifierType.Q_OR:
+                if not sdata.is_false(result):
+                    return result
+            else:  # AND
+                if sdata.is_false(result):
+                    return sdata.false_val
+
+        # Last node should be tossed up as a continuation in both cases
+        self.evaluate_subnode_as_continuation(env,last_node_idx)
+        
 # A form-wrapper around a literal value.
 # It must be converted to a python value before it is bound.
 class SkimpyLiteral(SkimpyForm):
@@ -284,6 +314,12 @@ def analyze_cond(form):
         alternative = SkimpyIf(form,parse.get_subnode(node,0), parse.get_subnode(node,1),alternative)
 
     return alternative
+
+def analyze_or(form):
+    return SkimpyQualifier(form, parse.generate_subnodes(form,1), QualifierType.Q_OR)
+
+def analyze_and(form):
+    return SkimpyQualifier(form, parse.generate_subnodes(form,1), QualifierType.Q_AND)
         
 def analyze_literal(form):
     if parse.is_number(form):
@@ -301,7 +337,9 @@ special_map = {"lambda" : analyze_lambda,
                 "begin" : analyze_sequence,
                "if" : analyze_if,
                "cond" : analyze_cond,
-               "let" : analyze_let}
+               "let" : analyze_let,
+               "or" : analyze_or,
+               "and" : analyze_and}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss
@@ -334,6 +372,21 @@ def translate(form):
         return cl(form)
     else:
         return form
+
+def preprocess(form):
+    # Preprocess a concrete tree into an abstract one
+    # This is called on the root of a program, so let's handle it specially
+    tree_stack = []
+
+    for node in parse.generate_subnodes(form):
+        tree_stack.append(translate(node))
+
+    while tree_stack:
+        current = tree_stack.pop()
+        # Translate and push
+        if current.subnode_values:
+            current.translate_subnodes()
+            tree_stack.extend(current.subnode_values)
 
 def skimpy_eval(skimpy_form,env,caller_id = None):
 

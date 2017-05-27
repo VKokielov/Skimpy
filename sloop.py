@@ -12,7 +12,8 @@ from serror import SkimpyError
 
 def execute_code(text,env,interactive=False):
     tree = parse.skimpy_scan(text)
-
+    #seval.preprocess(tree)
+    
     for expr in parse.generate_subnodes(tree):
         result = seval.skimpy_eval(expr,env)
         if interactive:
@@ -124,5 +125,11 @@ if __name__ == "__main__":
     global_env = prepare()
 
     # Sit in a loop and read stdin until eof
-    run_file(global_env,"C:\\Users\\vkramer\\Documents\\skimpy_test.scm")
+    file_name = "C:\\Users\\vkramer\\Documents\\skimpy_test.scm"
+    if len(sys.argv) >= 2:
+        file_name = sys.argv[1]
+    try:
+        run_file(global_env,file_name)
+    except SkimpyError as serr:
+        print (str(serr))
 
