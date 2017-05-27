@@ -110,8 +110,10 @@ class SkimpySequence(SkimpyForm):
         self.subnodes(subexprs)
 
     def seval(self,env,caller_id):
-        # Return the last value evaluated
-        return self.evaluate_subnodes(env)[-1]        
+        # Evaluate everything but the last node, then make the last node a continuation
+        last_node = len(self.subnode_values)-1
+        self.evaluate_subnodes(env,0,last_node)
+        self.evaluate_subnode_as_continuation(env,last_node)
 
 class SkimpyIf(SkimpyForm):
     def __init__(self,form,cond,consequence,alternative):
@@ -189,11 +191,32 @@ def analyze_lambda(form):
         for argname in parse.generate_subnodes(arglist_node):
             if not parse.is_varname(argname):
                 raise SkimpyError(form, 'lambda: invalid syntax in argument list')
-            argnames.append(argname)
+            argnames.append(parse.get_text(argname))
 
         return SkimpyLambda(form,argnames,\
                             analyze_proc_body(form,parse.generate_subnodes(form,2)) )
 
+def analyze_let(form):
+    # A let is a lambda which is immediately applied
+    # Let's extract the parts
+    # NOTE:  There are more efficient as-if ways to do this.  I will consider a special SkimpyLet.
+    
+    # TODO: Syntax checks
+    
+    binding_list = parse.get_subnode(form,1)
+    text = parse.generate_subnodes(form,2)
+    
+    argnames = []
+    apply_list = [None]  # Reserve space for the procedure represented by the lambda
+    # Go through the bindings, adding variable names to the argument list (see analyze_define) and
+    # expressions to the application list
+    for node in parse.generate_subnodes(binding_list):
+        argnames.append (parse.get_text(parse.get_subnode(node,0)))
+        apply_list.append (parse.get_subnode(node,1))
+
+    apply_list[0] = SkimpyLambda(form,argnames,analyze_proc_body(form,text))
+    return SkimpyApply(form,apply_list)
+    
 def analyze_define(form):
     # Two possibilities.  Regular define or regular define with lambda
     # Example:  (1) (define x 5)
@@ -211,7 +234,12 @@ def analyze_define(form):
                 raise SkimpyError(defined_obj, 'define: invalid syntax')
             
             # Construct the lambda from the remainder
-            argnames = [parse.get_text(name_token) for name_token in obj_nodes]
+            argnames = []
+            for argname in obj_nodes:
+                if not parse.is_varname(argname):
+                    raise SkimpyError(form, 'define: invalid syntax in argument list')
+                argnames.append(parse.get_text(argname))
+            
             proc_text = analyze_proc_body(form,form_subnodes)
             def_expr = SkimpyLambda(form,argnames,proc_text)
         else:
@@ -255,9 +283,8 @@ def analyze_cond(form):
     for node in parse.generate_subnodes_reversed(form,start_idx,1):
         alternative = SkimpyIf(form,parse.get_subnode(node,0), parse.get_subnode(node,1),alternative)
 
-    alternative.radiotrace = True
     return alternative
-
+        
 def analyze_literal(form):
     if parse.is_number(form):
         return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
@@ -273,7 +300,8 @@ special_map = {"lambda" : analyze_lambda,
                "define" : analyze_define,
                 "begin" : analyze_sequence,
                "if" : analyze_if,
-               "cond" : analyze_cond}
+               "cond" : analyze_cond,
+               "let" : analyze_let}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss

@@ -84,9 +84,11 @@ def is_greater(env,token,v1,v2):
 
 def display_text(env,token,*args):
     for arg in args:
-        sys.stdout.write(str(arg) + ' ')
-    sys.stdout.write('\n')
+        sys.stdout.write(str(arg))
     return sdata.SkimpyNonReturn('<unspecified>')
+
+def remainder(env,token,divisor,dividend):
+    return divisor % dividend
 
 def prepare():
     # Creates a new global environment and adds bindings for
@@ -108,11 +110,13 @@ def prepare():
     bind_builtin(global_env,'=',is_equal,check_arg_count=2)
     bind_builtin(global_env,'<',is_less,check_arg_count=2)
     bind_builtin(global_env,'>',is_greater,check_arg_count=2)
+    bind_builtin(global_env,'remainder',remainder,check_arg_count=2)
     bind_builtin(global_env,'load',load_file,check_arg_count=1)
-    bind_builtin(global_env,'print',display_text,check_arg_count=(1,None))
+    bind_builtin(global_env,'display',display_text,check_arg_count=(1,None))
 
     global_env.bind('#t',sdata.true_val)
     global_env.bind('#f',sdata.false_val)
+    global_env.bind('#\\newline',sdata.SkimpyChar('\n'))
 
     return global_env
 

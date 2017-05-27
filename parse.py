@@ -81,9 +81,9 @@ class SkimpyPrescanContext(object):
     def distance(self):
         return self.idx - self.mark
 
+extended_set = set(iter("+*/-_<>?!'=.\#"))
 def is_extended(ch):
-    return ch == "+" or ch == "*" or ch == "/" or ch == "-" or ch == "_" or ch == "<" or ch == ">" or ch == "?" or ch == "!" or ch == "'"\
-           or ch == "=" or ch == "<" or ch == ">" or ch == "."
+    return ch in extended_set
 
 # not applicable for text between quotes
 def classify_char(ch):
@@ -197,7 +197,8 @@ def is_string(token):
     return is_atom(token) and get_text(token)[0] == '"'
 
 def to_python_string(token):
-    return get_text(token)[1:]  # skip the tagging quotation mark
+    # skip the tagging quotation mark
+    return get_text(token)[1:] 
 
 def is_varname(token):
     # This is an oversimplification

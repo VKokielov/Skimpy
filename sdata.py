@@ -105,6 +105,15 @@ class SkimpyString(SkimpyValue):
     def pythonify(self):
         return self.value
 
+class SkimpyChar(SkimpyValue):
+    def __init__(self,value):
+        if len(value) != 1:
+            raise ValueError('A character must be of length 1')
+        self.value = value
+
+    def pythonify(self):
+        return self.value
+
 class SkimpyBool(SkimpyValue):
     def __init__(self,value):
         self.value = value
