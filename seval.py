@@ -460,12 +460,14 @@ def get_form_factory(form):
         first_element = parse.get_subnode(form,0)
         if first_element is None:
             raise SkimpyError(form, 'unexpected empty form ()')
-        element_text = parse.get_text(first_element)
-        if element_text in special_map:
-            return special_map[element_text]
-        else:
-            # Treat it as an application
-            return analyze_apply
+
+        if parse.is_atom(first_element):
+            element_text = parse.get_text(first_element)
+            if element_text in special_map:
+                return special_map[element_text]
+        
+        # If nothing else works, treat this as an application
+        return analyze_apply
     else:
         if parse.is_varname(form):
             return SkimpyVariable # In this case we can return the class name because the constructor just takes form
