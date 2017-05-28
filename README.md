@@ -6,6 +6,7 @@ Skimpy is somewhat boot-strapped to Python, especially in respect to:
 * Garbage.  Values are represented as Python objects, as are environments.  Environments which do not escape to the global scope or which are made irrelevant because there are no references to them should be finalized by clearing refs to all values within them, and doing so recursively for pairs among the values.  This will help the dumbest Python garbage collector succeed.
 
 * The form of evaluation.  I considered decoupling evaluation in Scheme from Python by using generators that speak with the evaluator.  It proved too complicated.  I settled for a compromise: when an evaluator determines that the result of an expression is the result of one of its subexpressions, it throws an exception and returns control to the evaluator.  This mechanism also serves to implement tail optimization with some minor alterations.
+** UPDATE:  I have added an explicit-control evaluator using generators.  Unfortunately, it is much slower -- possibly because every expression must now explicitly or implicitly construct a new Python object on evaluation.  On the other hand, there is now no limit to the recursion depth
 
 In respect of values, the interpreter is less boot-strapped.  Scheme values are always represented by special Python objects.  Conversion is implicit in rare cases.  Even procedures implemented in Python can opt out of having inputs and outputs converted, by setting a flag.  This will increase performance at the expense of clarity.
 

@@ -30,7 +30,33 @@ class CompoundProc(SkimpyProc):
 
     def __str__(self):
         return self.name
-    
+
+    class Applier(object):
+        def __init__(self,token,exec_env,values,host):
+            self.token = token
+            self.exec_env = exec_env
+            self.values = values
+            self.host = host
+            self._user = None
+
+        def send(self,result):
+            # result should be None here
+            # NOTE:  _user was set by the explicit_eval function!
+            requester = self._user
+            my_host = self.host
+            my_host.text = seval.translate(my_host.text)
+            
+            if isinstance(requester,CompoundProc.Applier) and requester.host == my_host:
+                senv.bind_arglist(self.token,self.exec_env,my_host.arglist,self.values,rebind=True)
+                raise StopIteration ((my_host.text.make_eval(exec_env),seval.EvalMessage.CONTINUATION))
+            else:
+                new_env = senv.bind_arglist(self.token,my_host.enc_env,my_host.arglist,self.values)
+                new_env.bind_private("_cp",self)         
+                raise StopIteration ((my_host.text.make_eval(new_env),seval.EvalMessage.CONTINUATION))            
+
+    def make_applier(self,token,exec_env,values):
+        return CompoundProc.Applier(token,exec_env,values,self)
+        
     def apply(self,token,exec_env,caller_id,values):
         # NOTE:  exec_env is passed through from eval in case we ever need it, but we extend the environment in which we evaluated the lambda!!
         
@@ -66,6 +92,13 @@ class PythonProc(SkimpyProc):
 
     def __str__(self):
         return 'primitive-procedure ' + self.name
+
+    def make_applier(self,token,exec_env,values):
+        # This just calls apply.  A primitive applier is always a leaf in the computation
+        if False:
+            yield None
+
+        return [self.apply(token,exec_env,None,values), seval.EvalMessage.RESULT]
     
     def apply(self,token,exec_env,caller_id,values):
         if self.check_args is not None:

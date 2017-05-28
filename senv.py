@@ -24,7 +24,10 @@ class SkimpyEnvironment(object):
             return None
 
     def find_private(self,key):
-        return self.pmapping[key]        
+        if key in self.pmapping:
+            return self.pmapping[key]
+        else:
+            return None
 
     def __str__(self):
         return str_dict(self.mapping) + "|" + str_dict(self.pmapping) + ":" + str(self.enclosing)

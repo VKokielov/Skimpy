@@ -8,16 +8,16 @@ import itertools
 import os
 import fileinput
 import sys
+import time
 from serror import SkimpyError
 
 def execute_code(text,env,interactive=False):
     tree = parse.skimpy_scan(text)
-    #seval.preprocess(tree)
-    
-    for expr in parse.generate_subnodes(tree):
-        result = seval.skimpy_eval(expr,env)
+
+    for subnode in parse.generate_subnodes(tree):
+        result = seval.skimpy_eval(subnode,env)[0]
         if interactive:
-            print ('>> ' + str(result[0]) + '\n')
+            print ('>> ' + str(result) + '\n')
 
 def load_file(env,token,filename):
     # Execute a file in its entirety
@@ -71,16 +71,15 @@ def negator(env,token,*inputs):
 
 def is_equal(env,token,v1,v2):
     # simple, bootstrapped initial version
+#    print ('is equal ' + str(v1) + ' ' + str(v2))    
     return v1 == v2
 
 def is_less(env,token,v1,v2):
     # simple, bootstrapped initial version
-#    print ('<:' + str(v1) + ' vs ' + str(v2))
+#    print ('is less ' + str(v1) + ' ' + str(v2))
     return v1 < v2
 
-def is_greater(env,token,v1,v2):
-    # simple, bootstrapped initial version
-#    print ('>:' + str(v1) + ' vs ' + str(v2))    
+def is_greater(env,token,v1,v2):  
     return v1 > v2
 
 def display_text(env,token,*args):
@@ -129,7 +128,9 @@ if __name__ == "__main__":
     if len(sys.argv) >= 2:
         file_name = sys.argv[1]
     try:
+        time1 = time.time()
         run_file(global_env,file_name)
+        print ('total time to run: ' + str(time.time() - time1))
     except SkimpyError as serr:
         print (str(serr))
 

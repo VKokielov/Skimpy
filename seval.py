@@ -3,6 +3,10 @@ import sdata
 from serror import SkimpyError
 from enum import Enum
 
+class EvalMessage(Enum):
+    CONTINUATION = 0
+    RESULT = 1
+    
 # Allow for tail-optimization by passing upstream an expression to be evaluated instead of a given one
 class ContinuationException(Exception):
     def __init__(self,form):
@@ -33,6 +37,28 @@ class SkimpyForm(object):
         eval_result,self.subnode_values[idx] = skimpy_eval(self.subnode_values[idx],env,None)
         return eval_result
 
+    def make_subnode_evaluator(self,env,idx):
+        if idx < 0:
+            idx = len(self.subnode_values) + idx
+
+#        if not isinstance(self.subnode_values[idx],SkimpyForm):
+#            print ('translating ' + self.subnode_values[idx].str_pretty())
+            
+        self.subnode_values[idx] = translate(self.subnode_values[idx])
+        return self.subnode_values[idx].make_eval(env)
+
+    def make_subnode_evaluators(self,env,range_l=0,range_u=None):
+        if range_u is None:
+            range_u = len(self.subnode_values)
+
+        if range_u < 0:
+            range_u = len(self.subnode_values) + range_u
+
+ #       print (str(self) + ': tr from ' + str(range_l) + ' to ' + str(range_u) + ' len ' + str(len(self.subnode_values)))
+        
+        for idx in range(range_l,range_u):
+            yield self.make_subnode_evaluator(env,idx)  
+
     def evaluate_subnode_as_continuation(self,env,idx):
         # Force an explicit translation of the subnode so we can cache the reference
         self.subnode_values[idx] = translate(self.subnode_values[idx])
@@ -62,6 +88,13 @@ class SkimpyLambda(SkimpyForm):
         # Save the text as a (currently unevaluated) subnode
         self.set_subnode(text,0)
         self.proc_id = 1
+
+    def make_eval(self,env):
+        to_ret = sdata.CompoundProc(env,'#compound-procedure-' + str(self.proc_id), self.argnames, self.get_subnode(0))
+        self.proc_id += 1
+        return (to_ret, EvalMessage.RESULT)
+    
+        yield None  # Force this to be a generator
         
     def seval(self,env,caller_id):
         # The text node is not automatically translated here.  What this means is that, unless you pretranslate the form,
@@ -81,6 +114,21 @@ class SkimpyApply(SkimpyForm):
         # note to self: the parsed program text should be immutable
         self.subnodes(subexprs)
 
+    def make_eval(self,env):
+        op_eval = self.make_subnode_evaluator(env,0)        
+        op = (yield op_eval)
+
+        if not isinstance(op,sdata.SkimpyProc):
+            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable')
+        
+        op_arguments = []
+        for arg_eval in self.make_subnode_evaluators(env,1,None):
+            result = (yield arg_eval)
+            op_arguments.append(result)
+
+        applier = op.make_applier(self.original_form,env,op_arguments)
+        return (applier,EvalMessage.CONTINUATION)
+
     def seval(self,env,caller_id):
         # Evaluate the operator, then evaluate the operands, then proceed to call the operator
         # Use the helper function in the base class
@@ -98,6 +146,14 @@ class SkimpyDefine(SkimpyForm):
         self.key = parse.get_text(key)
         self.set_subnode(expression,0)
 
+    def make_eval(self,env):
+        bv_eval = self.make_subnode_evaluator(env,0)
+        # Evaluate, then return nothing.
+        bound_value = (yield bv_eval)
+#        print ('binding ' + str(bound_value) + ' to ' + self.key)
+        env.bind (self.key, bound_value)
+        return (sdata.SkimpyNonReturn(self.key),EvalMessage.RESULT)
+        
     def seval(self,env,caller_id):
         bound_value = self.evaluate_subnode(env,0)
         # Add a binding to the environment
@@ -114,6 +170,14 @@ class SkimpySequence(SkimpyForm):
         # Store the expressions just as in 'apply'.  Later evaluate them in order
         self.subnodes(subexprs)
 
+    def make_eval(self,env):
+        statement_nodes = self.make_subnode_evaluators(env,0,-1)
+
+        for node in statement_nodes:
+            yield node
+
+        return (self.make_subnode_evaluator(env,-1),EvalMessage.CONTINUATION)
+        
     def seval(self,env,caller_id):
         # Evaluate everything but the last node, then make the last node a continuation
         last_node = len(self.subnode_values)-1
@@ -133,7 +197,20 @@ class SkimpyIf(SkimpyForm):
         if alternative is not None:
             self.set_subnode(alternative,2)
 
+#        print ('processing if: ' + form.str_pretty() + ', count ' + str(n_subnodes))
 
+    def make_eval(self,env):
+        cond_evaluator = self.make_subnode_evaluator(env,0)
+        cond_result = (yield cond_evaluator)
+
+        if not sdata.is_false(cond_result):
+            return (self.make_subnode_evaluator(env,1), EvalMessage.CONTINUATION)
+        else:
+            if len(self.subnode_values) > 2:
+                return (self.make_subnode_evaluator(env,2), EvalMessage.CONTINUATION) 
+            else:
+                return sdata.false_value
+    
     def seval(self,env,caller_id):
         cond_result = self.evaluate_subnode(env,0)
 
@@ -141,11 +218,10 @@ class SkimpyIf(SkimpyForm):
             self.evaluate_subnode_as_continuation(env,1)
         else:
             # Evaluating alternative
-            alternative = self.get_subnode(2)
-            if alternative is not None:
+            if len(self.subnode_values) > 2:
                 self.evaluate_subnode_as_continuation(env,2)
             else:
-                return sdata.false_value
+                return sdata.false_v
 
 class QualifierType(Enum):
     Q_OR = 0
@@ -156,6 +232,21 @@ class SkimpyQualifier(SkimpyForm):
         self.subnodes(subexpressions)
         self.qualifier_type = qualifier_type
 
+    def make_eval(self,env):
+        
+        for subnode_eval in self.make_subnode_evaluators(env,0,-1):
+            result = (yield subnode_eval)
+            # Short circuit
+            
+            if self.qualifier_type == QualifierType.Q_OR:
+                if not sdata.is_false(result):
+                    return (result,EvalMessage.RESULT)
+            else:  # AND
+                if sdata.is_false(result):
+                    return sdata.false_val            
+
+        return (self.make_subnode_evaluator(env,-1),EvalMessage.CONTINUATION)
+    
     def seval(self,env,caller_id):
         # Short-circuit evaluation
         last_node_idx = len(self.subnode_values)-1
@@ -182,6 +273,10 @@ class SkimpyLiteral(SkimpyForm):
         
         self._v = factory(python_value)
 
+    def make_eval(self,env):
+        return (self._v,EvalMessage.RESULT)
+        yield None
+    
     def seval(self,env,caller_id):
         return self._v
 
@@ -191,6 +286,14 @@ class SkimpyVariable(SkimpyForm):
         super(SkimpyVariable,self).__init__(form)       
         self.varname = parse.get_text(form)
 
+    def make_eval(self,env):
+        binding = env.find(self.varname)
+        if binding is None:
+            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
+
+        return (binding,EvalMessage.RESULT)
+        yield None
+        
     def seval(self,env,caller_id):
         binding = env.find(self.varname)
         if binding is None:
@@ -305,6 +408,7 @@ def analyze_cond(form):
     alternative = None
     start_idx = -1
     final_test = parse.get_subnode(last_cond,0)
+#    print ('ftext ' + final_test.str_pretty())
     if parse.is_atom(final_test) and parse.get_text(final_test) == "else":
         alternative = parse.get_subnode(last_cond,1)
         start_idx = -2
@@ -327,9 +431,13 @@ def analyze_literal(form):
     elif parse.is_string(form):
         return SkimpyLiteral(form,sdata.SkimpyString,parse.to_python_string(form))
 
-def analyze_sequence(form):
+def analyze_sequence(form,implicit=False):
     # A sequence of expressions
-    return SkimpySequence(form, parse.generate_subnodes(form,1))
+    return SkimpySequence(form, parse.generate_subnodes(form,0 if implicit else 1))
+
+def analyze_implicit_sequence(form):
+    # NOTE:  This is like analyze_proc_body above, except it preserves the tree.
+    return analyze_sequence(form,implicit=True)
 
 # Initialize a module-level dictionary mapping token values to factories (classes)
 special_map = {"lambda" : analyze_lambda,
@@ -344,6 +452,10 @@ special_map = {"lambda" : analyze_lambda,
 def get_form_factory(form):
     # Check the map, then check the conditionss
     if not parse.is_atom(form):
+        if form.parent is None:
+            # Analyze the root by building a sequence
+            return analyze_implicit_sequence
+        
         # All special forms begin with a first element
         first_element = parse.get_subnode(form,0)
         if first_element is None:
@@ -387,6 +499,42 @@ def preprocess(form):
         if current.subnode_values:
             current.translate_subnodes()
             tree_stack.extend(current.subnode_values)
+
+def explicit_eval(skimpy_form,env):
+    # The explicit evaluator does not use the Python stack for evaluation
+    # Instead it uses its own stack and signals.  It treats each form as a factory for evaluators.  It communicates
+    # with evaluators using send(), i.e. make_eval can be a generator
+
+    trans_form = translate(skimpy_form)
+    eval_list = [trans_form.make_eval(env)]
+    returned_result = None # The result of the previous evaluation
+
+    while eval_list:
+        to_eval = eval_list[-1]
+ #       print ('loop v ' + str(to_eval) + ':' + str(len(eval_list)))
+
+        # Make it generator-style natural
+        try:
+            next_request = to_eval.send(returned_result)
+
+            # Hack to enable iterative recursion (tail-optimization)
+            appl_class = sdata.CompoundProc.Applier
+            if isinstance(next_request, appl_class):
+                next_request._user = to_eval
+                
+            eval_list.append(next_request)
+            returned_result = None # So the new request won't be fed a leftover (illegal per Python)
+        except StopIteration as iter_exc:
+            eval_result = iter_exc.value
+            eval_list.pop()
+            
+            if eval_result[1] == EvalMessage.CONTINUATION:
+                eval_list.append(eval_result[0])
+                returned_result = None
+            else:
+                returned_result = eval_result[0]
+                
+    return returned_result
 
 def skimpy_eval(skimpy_form,env,caller_id = None):
 
