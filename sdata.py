@@ -17,6 +17,9 @@ class SkimpyValue(object):
         else:
             return str(python_val)
 
+    def str_for_display(self,token):
+        return str(self)
+
 class SkimpyProc(SkimpyValue):
     def __init__(self,enc_env,name,arglist,text):
         self.enc_env = enc_env
@@ -83,10 +86,12 @@ class CompoundProc(SkimpyProc):
 
 # To users these are indistinguishable if 'apply' is used to call a procedure
 class PythonProc(SkimpyProc):
-    def __init__(self,enc_env,name,pyf,check_arg_count=None,is_raw = False):
+    def __init__(self,enc_env,name,pyf,check_arg_count=None,check_arg_types=None,is_raw = False):
         
         super(PythonProc,self).__init__(enc_env,name,arglist=None,text=None)
-        self.check_args = check_arg_count
+        self.check_arg_count = check_arg_count
+        self.check_arg_types = check_arg_types
+        
         self.pyf = pyf
         self.is_raw = is_raw  # Do not pythonify values -- pass the list of objects
 
@@ -101,18 +106,28 @@ class PythonProc(SkimpyProc):
         return [self.apply(token,exec_env,None,values), seval.EvalMessage.RESULT]
     
     def apply(self,token,exec_env,caller_id,values):
-        if self.check_args is not None:
-            if isinstance(self.check_args,tuple):
-                min_args = self.check_args[0]
-                max_args = self.check_args[1]
+        if self.check_arg_count is not None:
+            if isinstance(self.check_arg_count,tuple):
+                min_args = self.check_arg_count[0]
+                max_args = self.check_arg_count[1]
             else:
-                min_args = self.check_args
-                max_args = self.check_args
+                min_args = self.check_arg_count
+                max_args = self.check_arg_count
                 
             if min_args is not None and len(values) < min_args:
-                raise SkimpyError(token, 'too few arguments for builtin procedure')
+                raise SkimpyError(token, 'too few arguments for builtin procedure ' + str(self.name))
             if max_args is not None and len(values) > max_args:
-                raise SkimpyError(token, 'too many arguments for builtin procedure')
+                raise SkimpyError(token, 'too many arguments for builtin procedure ' + str(self.name))
+
+        if self.check_arg_types is not None:
+            # Zip helps here.  It stops checking only when either values or check_arg_types is exhausted
+            # To check varargs, make check_arg_types an infinite generator
+            idx = 0
+            for check_pair,value in zip(self.check_arg_types,values):
+                if not check_pair[1](value,idx):
+                    raise SkimpyError(token,'argument ' + str(idx) + ': wrong argument type for builtin procedure ' + str(self.name)\
+                                      + '; expected ' + check_pair[0])
+                idx += 1
             
         # Do not bother binding the values into the environment, it's wasted time
         # The called python function knows what it expects in values
@@ -168,16 +183,29 @@ def is_false(val):
     # But let's not depend on it
     return isinstance(val,_SkimpyBool) and val.value == False
 
-class SkimpyNil(SkimpyValue):
-    pass
+class SkimpyEmptyList(SkimpyValue):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return ""  # this is quite deliberate
+
+the_empty_list = SkimpyEmptyList()
 
 class SkimpySymbol(SkimpyValue):
     pass
 
 class SkimpyPair(SkimpyValue):
+    # NOTE:  We don't Pythonify pairs.  x.car and x.cdr is not harder to type or read than x[0]/x[1].  It is arguably clearer here.
     def __init__(self,car,cdr):
         self.car = car
         self.cdr = cdr
+
+    def __str__(self):
+        return self.str_for_display(None)
+
+    def str_for_display(self,token):
+        return prettify_pair(token,self,detect_cycles=True)        
 
 # A value that doesn't count as a return, but has a string description
 class SkimpyNonReturn(SkimpyValue):
@@ -213,6 +241,62 @@ def skimpy_lister(first_pair):
     while not isinstance(pair,SkimpyNil):
         yield pair.car
         pair = pair.cdr
+
+def prettify_pair(command_token,pair,detect_cycles=False):
+    # An extremely dumb pretty-printer for pairs.  Recursive, so
+    #   1) limited by the Python stack
+    #   2) strings will be allocated and discarded left and right
+    if not isinstance(pair,SkimpyPair):
+        raise ValueError('prettify_pair called with non-pair')
+    
+    def pair_prettifier(obj,cycle_detector):
+        if not isinstance(obj,SkimpyPair):
+            # Just get the string rep
+            return str(obj)
+
+        # Now deal with the pair
+        if cycle_detector is not None:
+            if obj in cycle_detector:
+                raise SkimpyError(command_token, "list structure contains cycles.")
+            cycle_detector.add(obj)
+
+        left = obj.car
+        right = obj.cdr
+        
+        # We don't care about form_left because form_left is not specially printed (i.e. has no dot dilemma)
+        form_left = pair_prettifier(left,cycle_detector)
+        if right == the_empty_list:
+            form_right = None
+        else:
+            form_right = pair_prettifier(right,cycle_detector)            
+
+        # 2(3) = 6 possibilities for car and cdr as pairs and nonpairs
+        result_str = ""
+        if isinstance(left,SkimpyPair):
+            if form_right is None:
+                result_str = "({left_v})".format(left_v = form_left, right_v = form_right)
+            elif isinstance(right,SkimpyPair):
+                result_str = "({left_v}) {right_v}".format(left_v = form_left, right_v = form_right)
+            else:
+                result_str = "({left_v}) . {right_v}".format(left_v = form_left, right_v = form_right)
+        else:
+            if form_right is None:
+                result_str = "{left_v}".format(left_v = form_left, right_v = form_right)               
+            elif isinstance(right,SkimpyPair):
+                result_str = "{left_v} {right_v}".format(left_v = form_left, right_v = form_right)
+            else:
+                result_str = "{left_v} . {right_v}".format(left_v = form_left, right_v = form_right)
+        return result_str
+
+    if detect_cycles:
+       return "(" + pair_prettifier(pair,set()) + ")"
+    else:
+        return "(" + pair_prettifier(pair,None) + ")"
+    
+        
+# quote and unquote
+# quote is used to turn a subtree of Skimpy tokens into a Scheme data structure
+# unquote does the opposite, in preparation for evaluating the text of a Skimpy program
 
 def nodes_to_list(quotable):
     pass

@@ -190,8 +190,12 @@ def is_number(token):
         return False
 
 def to_number(token):
-    # This wrapper around Python's str->num converter is to declare the policy
-    return float(get_text(token))
+    # This wrapper around Python's str->num converter is to declare the policy for building numeric types from literals
+    token_text = get_text(token)
+    if "." in token_text:
+        return float(token_text)
+    else:
+        return int(token_text)
 
 def is_string(token):
     return is_atom(token) and get_text(token)[0] == '"'

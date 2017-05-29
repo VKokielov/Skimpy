@@ -44,8 +44,8 @@ def run_file(env,filename):
     # NOTE:  We execute file inside the current environment, not the top-level
     execute_code(ptext,env,interactive=True)
 
-def bind_builtin(env,name,pyf,check_arg_count=None, is_raw=False):
-    proc = sdata.PythonProc(env,name,pyf,check_arg_count, is_raw)
+def bind_builtin(env,name,pyf,check_arg_count=None, check_arg_types=None, is_raw=False):
+    proc = sdata.PythonProc(env,name,pyf,check_arg_count, check_arg_types, is_raw)
     env.bind(name,proc)
 
 def accumulate(op,inputs):
@@ -82,14 +82,24 @@ def is_less(env,token,v1,v2):
 def is_greater(env,token,v1,v2):  
     return v1 > v2
 
-def display_text(env,token,*args):
-    for arg in args:
-        sys.stdout.write(str(arg))
+def display_text(env,token,arglist):
+    # Accept SkimpyValues directly here
+    for arg in arglist:
+        sys.stdout.write(arg.str_for_display(token))
     return sdata.SkimpyNonReturn('<unspecified>')
 
 def remainder(env,token,divisor,dividend):
     return divisor % dividend
 
+def make_pair(env,token,args):
+    return sdata.SkimpyPair(args[0],args[1])
+
+def pair_left(env,token,arg):
+    return arg[0].car
+
+def pair_right(env,token,arg):
+    return arg[0].cdr
+    
 def prepare():
     # Creates a new global environment and adds bindings for
     # all builtins
@@ -112,11 +122,19 @@ def prepare():
     bind_builtin(global_env,'>',is_greater,check_arg_count=2)
     bind_builtin(global_env,'remainder',remainder,check_arg_count=2)
     bind_builtin(global_env,'load',load_file,check_arg_count=1)
-    bind_builtin(global_env,'display',display_text,check_arg_count=(1,None))
+    bind_builtin(global_env,'display',display_text,check_arg_count=(1,None),is_raw=True)
+    bind_builtin(global_env,'cons',make_pair,check_arg_count=(2,None),is_raw=True)
+    
+    bind_builtin(global_env,'car',pair_left,check_arg_count=(1,None),
+                 check_arg_types=[('pair',lambda arg, index: isinstance(arg,sdata.SkimpyPair))], is_raw=True)
+    bind_builtin(global_env,'cdr',pair_right,check_arg_count=(1,None),
+                 check_arg_types=[('pair',lambda arg, index: isinstance(arg,sdata.SkimpyPair))], is_raw=True)
 
     global_env.bind('#t',sdata.true_val)
     global_env.bind('#f',sdata.false_val)
     global_env.bind('#\\newline',sdata.SkimpyChar('\n'))
+
+    global_env.bind("__tempnil__",sdata.the_empty_list)  # TODO remove this once quote is available
 
     return global_env
 

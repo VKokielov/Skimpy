@@ -299,7 +299,8 @@ class SkimpyVariable(SkimpyForm):
         if binding is None:
             raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
 
-        return binding       
+        return binding
+    
 
 def analyze_proc_body(ref_form,form_iterator):
     proc_body_list = list(form_iterator)  # this makes sense because we will use these one way or another
