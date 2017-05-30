@@ -10,7 +10,7 @@ Skimpy is somewhat boot-strapped to Python, especially in respect to:
 
 In respect of values, the interpreter is less boot-strapped.  Scheme values are always represented by special Python objects.  Conversion is implicit in rare cases.  Even procedures implemented in Python can opt out of having inputs and outputs converted, by setting a flag.  This will increase performance at the expense of clarity.
 
-Because the functional part of Python is much akin to Scheme, the boot-strap simplifies some operations and makes other look familiar.  On the other hand, this is not a wrapper but a legitimate interpreting machine.  Had coroutines been less unwieldy to use for this purpose, I would have gladly used them to separate out evaluation and objectify it.
+Because the functional part of Python is much akin to Scheme, the boot-strap simplifies some operations and makes other look familiar.  On the other hand, this is not a wrapper but a legitimate interpreting machine.
 
 ## TRANSLATION
 The interpreter, conventionally, begins by prescanning the text of a program and breaking it into a sequence of tokens.  Following that it turns strings full of parentheses into nodes of what I call the concrete tree.  The concrete tree contains intermediate nodes and leaves, consisting of the tokens.  (Each token remembers where it was parsed so that no matter where an error happens the end-user can be referred to the file.)

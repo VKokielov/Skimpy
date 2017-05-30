@@ -130,8 +130,6 @@ def prepare():
     bind_builtin(global_env,'cdr',pair_right,check_arg_count=(1,None),
                  check_arg_types=[('pair',lambda arg, index: isinstance(arg,sdata.SkimpyPair))], is_raw=True)
 
-    global_env.bind('#t',sdata.true_val)
-    global_env.bind('#f',sdata.false_val)
     global_env.bind('#\\newline',sdata.SkimpyChar('\n'))
 
     global_env.bind("__tempnil__",sdata.the_empty_list)  # TODO remove this once quote is available

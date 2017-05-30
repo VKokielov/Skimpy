@@ -188,12 +188,19 @@ class SkimpyEmptyList(SkimpyValue):
         pass
 
     def __str__(self):
-        return ""  # this is quite deliberate
+        return "()"  # this is quite deliberate
 
 the_empty_list = SkimpyEmptyList()
 
 class SkimpySymbol(SkimpyValue):
-    pass
+    def __init__(self,symbol_name):
+        self.symbol_name = symbol_name
+
+    def __str__(self):
+        return self.symbol_name
+
+    def pythonify(self):
+        return self.symbol_name  # as string
 
 class SkimpyPair(SkimpyValue):
     # NOTE:  We don't Pythonify pairs.  x.car and x.cdr is not harder to type or read than x[0]/x[1].  It is arguably clearer here.
@@ -298,5 +305,48 @@ def prettify_pair(command_token,pair,detect_cycles=False):
 # quote is used to turn a subtree of Skimpy tokens into a Scheme data structure
 # unquote does the opposite, in preparation for evaluating the text of a Skimpy program
 
-def nodes_to_list(quotable):
-    pass
+def do_quote(error_token, quotable):
+    if parse.is_atom(quotable):
+        if parse.is_literal(quotable):
+            return seval.get_literal_contents(quotable)
+        else:
+            return SkimpySymbol(parse.get_text(quotable))
+    else:
+        # We have either a node or an iterator.  The iterable represents a subnode generator
+        if isinstance(quotable,parse.SkimpyConcrNonleafNode):
+            subnodes = parse.generate_subnodes(quotable)
+        else:  # must be iterator since we pass nothing else.  expression trees contain either Nonleaf nodes or Tokens
+            subnodes = quotable
+
+        first_subnode = next(subnodes,None)
+        if first_subnode is None:
+            return the_empty_list
+        
+        quoted_first = do_quote(error_token,first_subnode)
+
+        second_subnode = next(subnodes,None)
+
+        if second_subnode is None:
+            # Construct a pair with the empty list at the end
+            return SkimpyPair(quoted_first,the_empty_list)
+
+        if parse.get_text(second_subnode) == ".":
+            # There must be exactly one more node
+            third_subnode = next(subnodes,None)
+            fourth_subnode = next(subnodes,None)
+
+            if third_subnode is None or fourth_subnode is not None:
+                raise SkimpyError(error_token, 'quote: ill-formed dotted list -- there should be exactly one value after the dot')
+
+            quoted_second = do_quote(error_token,third_subnode)
+            return SkimpyPair(quoted_first,quoted_second)
+        else:
+            # The 'Python cdr' of the list will give us the right argument
+
+            # have to handle second node specially since we saw it with the generator.  A little less elegant than I would like, but..
+            quoted_second = do_quote(error_token,second_subnode)
+            quoted_rest = do_quote(error_token,subnodes)
+            #subnodes = None  # NOTE:  Keep this statement!  It means subnodes will be in an invalid state after the recursive call
+
+            return SkimpyPair(quoted_first,SkimpyPair(quoted_second,quoted_rest))
+            

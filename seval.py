@@ -266,12 +266,11 @@ class SkimpyQualifier(SkimpyForm):
 # A form-wrapper around a literal value.
 # It must be converted to a python value before it is bound.
 class SkimpyLiteral(SkimpyForm):
-    def __init__(self,form,factory,python_value):
+    def __init__(self,form,value):
         super(SkimpyLiteral,self).__init__(form)
         # form must be an atom/token representing a value that can be wrapped in factory
         # note: converter is handed in
-        
-        self._v = factory(python_value)
+        self._v = value
 
     def make_eval(self,env):
         return (self._v,EvalMessage.RESULT)
@@ -425,12 +424,20 @@ def analyze_or(form):
 
 def analyze_and(form):
     return SkimpyQualifier(form, parse.generate_subnodes(form,1), QualifierType.Q_AND)
-        
-def analyze_literal(form):
+
+def get_literal_contents(form):
     if parse.is_number(form):
-        return SkimpyLiteral(form,sdata.SkimpyNumber,parse.to_number(form))
+        return sdata.SkimpyNumber(parse.to_number(form))
     elif parse.is_string(form):
-        return SkimpyLiteral(form,sdata.SkimpyString,parse.to_python_string(form))
+        return sdata.SkimpyString(parse.to_python_string(form))
+    elif parse.is_boolean(form):
+        if parse.to_python_boolean(form):
+            return sdata.true_val
+        else:
+            return sdata.true_val
+
+def analyze_literal(form):
+    return SkimpyLiteral(form,get_literal_contents(form))
 
 def analyze_sequence(form,implicit=False):
     # A sequence of expressions
@@ -440,6 +447,17 @@ def analyze_implicit_sequence(form):
     # NOTE:  This is like analyze_proc_body above, except it preserves the tree.
     return analyze_sequence(form,implicit=True)
 
+def analyze_quote(form):
+    # analyze_quote is a generalization of analyze_literal
+    # it constructs a list from an expression in Scheme syntax
+    # delegate to sdata.do_quote
+    quoted_form = parse.get_subnode(form,1,False)
+    rest = parse.get_subnode(form,2,False)
+    if quoted_form == False or rest != False:
+        raise SkimpyError(form,'quote special form requires exactly two arguments')
+    
+    return SkimpyLiteral(form,sdata.do_quote(form,quoted_form))
+
 # Initialize a module-level dictionary mapping token values to factories (classes)
 special_map = {"lambda" : analyze_lambda,
                "define" : analyze_define,
@@ -448,7 +466,8 @@ special_map = {"lambda" : analyze_lambda,
                "cond" : analyze_cond,
                "let" : analyze_let,
                "or" : analyze_or,
-               "and" : analyze_and}
+               "and" : analyze_and,
+               "quote" : analyze_quote}
 
 def get_form_factory(form):
     # Check the map, then check the conditionss
@@ -470,10 +489,10 @@ def get_form_factory(form):
         # If nothing else works, treat this as an application
         return analyze_apply
     else:
-        if parse.is_varname(form):
-            return SkimpyVariable # In this case we can return the class name because the constructor just takes form
-        else:
+        if parse.is_literal(form):
             return analyze_literal
+        else:
+            return SkimpyVariable # In this case we can return the class name because the constructor just takes form            
 
 def translate(form):
     # translate() will return the object it gets if it's already a SkimpyForm

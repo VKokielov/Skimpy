@@ -202,11 +202,26 @@ def is_string(token):
 
 def to_python_string(token):
     # skip the tagging quotation mark
-    return get_text(token)[1:] 
+    return get_text(token)[1:]
+
+def is_boolean(token):
+    text = get_text(token)
+    return text == "#f" or text == "#t"
+
+def to_python_boolean(token):
+    text = get_text(token)
+    if text == "#t":
+        return True
+    elif text == "#f":
+        return False
+    else:
+        raise ValueError('token not recognized as boolean')
+
+def is_literal(token):
+    return is_atom(token) and (is_number(token) or is_string(token) or is_boolean(token))
 
 def is_varname(token):
-    # This is an oversimplification
-    return is_atom(token) and not is_number(token) and not is_string(token)
+    return is_atom(token) and not is_literal(token)
 
 def generate_subnodes(concrete_node,start = 0):
     if not is_atom(concrete_node):
@@ -223,10 +238,12 @@ def generate_subnodes_reversed(concrete_node,start = None, end = 0):
         for idx in range(start,end - 1,-1):
             yield concrete_node.text[idx]
 
-def get_subnode(concrete_node,index):
+def get_subnode(concrete_node,index,default=None):
     if not is_atom(concrete_node):
         if index < len(concrete_node.text) and index >= -len(concrete_node.text):
             return concrete_node.text[index]
+        elif default is not None:
+            return default
         else:
             raise ValueError('concrete node index out of bounds')
     else:
