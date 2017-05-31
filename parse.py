@@ -272,20 +272,31 @@ def python_bind(f,*args,**kwargs):
     return _proc
 
 def skimpy_scan(t_str):
+    class ScanLevel(object):
+        def __init__(self,token,implicit=False):
+            self.implicit = implicit
+            self.token = token
+            self.count = 0
     # We prescan cleverly, by building up a sequence of operations to perform
     sbuilder = SkimpyTreeBuilder()
-    lp_stack = []  # stack of left parentheses
+    
+    lp_stack = []  # stack of ScanLevel objects describing the tree
+    
     operations = []
-    for token in skimpy_prescan(t_str):
-       
+    for token in skimpy_prescan(t_str):    
         if token.text == "(":
-            lp_stack.append(token)
+            lp_stack.append(ScanLevel(token))
             operations.append(python_bind(sbuilder.push, token))
         elif token.text == ")":
             if not lp_stack:
                 raise SkimpyError(token,'unmatched right parenthesis')
             lp_stack.pop()
             operations.append(sbuilder.pop)  # Nothing to bind, pop takes no arguments
+        elif token.text == "'":
+            # Treat ' as (quote x).  Add an implicit parenthesis which is to be closed after one entry
+            lp_stack.append(ScanLevel(token,implicit=True))
+            operations.append(python_bind(sbuilder.push,token))
+            operations.append(python_bind(sbuilder.append,SkimpyToken("quote",token.line,token.col)))
         else:
             if token.text and token.text[0] == '"':
                 # Quoted text
@@ -295,6 +306,14 @@ def skimpy_scan(t_str):
                 operations.append(python_bind(sbuilder.append,slice_token(token,0,-1)))
             else:
                 operations.append(python_bind(sbuilder.append,token))
+
+        # Update the level entry count.  If the token is implicit, pop again
+        if lp_stack:
+            ccount = lp_stack[-1].count + 1
+            lp_stack[-1].count = ccount
+            if lp_stack[-1].implicit and ccount > 1:
+                lp_stack.pop()
+                operations.append(sbuilder.pop)
 
     if lp_stack:
         # Pop the token and report an error
