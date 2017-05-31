@@ -1,4 +1,5 @@
 from serror import SkimpyError
+import threading
 
 class SkimpyEnvironment(object):
     # Initialize by extending an environment
@@ -68,5 +69,25 @@ def bind_arglist(call_token,env,arglist,values,rebind=False):
     
     return bind_env # note: if rebind=True, this returns env again!
             
+# The symbol dictionary
+symbol_dict = {}
+symbol_dict_lock = threading.Lock()
 
+# For interning symbols
+def lookup_symbol(name,factory,*args):
+    rv = None
+    name = name.lower()  # per the spec
+    try:
+        # TODO:  This is not a good idea for single-threaded programs, but there is no other way
+        # to implement eq? by direct comparison except like this
+        # Pretranslation can somewhat help, because symbols are fairly atomic in Lisp (i.e. few operations yield a new symbol.)
+        symbol_dict_lock.acquire()
 
+        if name in symbol_dict:
+            rv = symbol_dict[name]
+        else:
+            rv = factory(name,*args)
+            symbol_dict[name] = rv
+    finally:
+        symbol_dict_lock.release()
+    return rv

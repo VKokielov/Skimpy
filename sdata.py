@@ -124,7 +124,7 @@ class PythonProc(SkimpyProc):
             # To check varargs, make check_arg_types an infinite generator
             idx = 0
             for check_pair,value in zip(self.check_arg_types,values):
-                if not check_pair[1](value,idx):
+                if check_pair[0] == '*' or not check_pair[1](value,idx):
                     raise SkimpyError(token,'argument ' + str(idx) + ': wrong argument type for builtin procedure ' + str(self.name)\
                                       + '; expected ' + check_pair[0])
                 idx += 1
@@ -310,7 +310,7 @@ def do_quote(error_token, quotable):
         if parse.is_literal(quotable):
             return seval.get_literal_contents(quotable)
         else:
-            return SkimpySymbol(parse.get_text(quotable))
+            return senv.lookup_symbol(parse.get_text(quotable),SkimpySymbol)
     else:
         # We have either a node or an iterator.  The iterable represents a subnode generator
         if isinstance(quotable,parse.SkimpyConcrNonleafNode):
@@ -319,6 +319,7 @@ def do_quote(error_token, quotable):
             subnodes = quotable
 
         first_subnode = next(subnodes,None)
+        # This is for the empty list
         if first_subnode is None:
             return the_empty_list
         
@@ -328,6 +329,7 @@ def do_quote(error_token, quotable):
 
         if second_subnode is None:
             # Construct a pair with the empty list at the end
+            # This is for standard list notation, (1)
             return SkimpyPair(quoted_first,the_empty_list)
 
         if parse.get_text(second_subnode) == ".":
@@ -349,4 +351,28 @@ def do_quote(error_token, quotable):
             #subnodes = None  # NOTE:  Keep this statement!  It means subnodes will be in an invalid state after the recursive call
 
             return SkimpyPair(quoted_first,SkimpyPair(quoted_second,quoted_rest))
-            
+
+# Consumer-style list builder
+def list_builder():
+
+    element = (yield)
+    # Treat first element specially
+    if element is None:
+        return the_empty_list
+    else:
+        result = SkimpyPair(element, the_empty_list)
+        cursor = result
+
+    element = (yield)
+    while element is not None:
+        cursor.cdr = SkimpyPair(element, the_empty_list)
+        cursor = cursor.cdr
+        element = (yield)
+
+    return result
+
+# Producer of list elements
+def lister(lst):
+    while lst != the_empty_list:
+        yield lst.car
+        lst = lst.cdr

@@ -454,7 +454,7 @@ def analyze_quote(form):
     quoted_form = parse.get_subnode(form,1,False)
     rest = parse.get_subnode(form,2,False)
     if quoted_form == False or rest != False:
-        raise SkimpyError(form,'quote special form requires exactly two arguments')
+        raise SkimpyError(form,'quote special form requires exactly one argument')
     
     return SkimpyLiteral(form,sdata.do_quote(form,quoted_form))
 
