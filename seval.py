@@ -80,7 +80,7 @@ class SkimpyForm(object):
         return result_list
 
 class SkimpyLambda(SkimpyForm):
-    def __init__(self,form,argnames,text):
+    def __init__(self,form,argnames,text,force_name=None):
         super(SkimpyLambda,self).__init__(form,1)
 
         self.argnames = argnames
@@ -88,10 +88,23 @@ class SkimpyLambda(SkimpyForm):
         # Save the text as a (currently unevaluated) subnode
         self.set_subnode(text,0)
         self.proc_id = 1
+        # Used to give procedures names when we use the 'define' syntactic sugar
+        # TODO:
+        #   1) Hierarchies (define within define)
+        #   2) If a name is set! to something else, the procedure will wrongly remember its original name
+        self.force_name = force_name
 
-    def make_eval(self,env):
-        to_ret = sdata.CompoundProc(env,'#compound-procedure-' + str(self.proc_id), self.argnames, self.get_subnode(0))
-        self.proc_id += 1
+    def generate_proc_name(self):
+        if self.force_name is not None:
+            return self.force_name
+        else:
+            proc_name = '#compound-procedure-' + str(self.proc_id)
+            self.proc_id += 1
+            return proc_name
+
+    def make_eval(self,env):            
+        to_ret = sdata.CompoundProc(env, self.generate_proc_name(), self.argnames, self.get_subnode(0))
+        
         return (to_ret, EvalMessage.RESULT)
     
         yield None  # Force this to be a generator
@@ -102,8 +115,7 @@ class SkimpyLambda(SkimpyForm):
 
         # On the other hand, the CompoundProc object below evaluates the text and therefore caches the translation after
         # the first evaluation.
-        to_ret = sdata.CompoundProc(env,'#compound-procedure-' + str(self.proc_id), self.argnames, self.get_subnode(0))
-        self.proc_id += 1
+        to_ret = sdata.CompoundProc(env,self.generate_proc_name(), self.argnames, self.get_subnode(0))
         return to_ret
 
 class SkimpyApply(SkimpyForm):
@@ -119,7 +131,7 @@ class SkimpyApply(SkimpyForm):
         op = (yield op_eval)
 
         if not isinstance(op,sdata.SkimpyProc):
-            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable')
+            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable',env)
         
         op_arguments = []
         for arg_eval in self.make_subnode_evaluators(env,1,None):
@@ -135,7 +147,7 @@ class SkimpyApply(SkimpyForm):
         op_to_call = self.evaluate_subnode(env,0)
 
         if not isinstance(op_to_call,sdata.SkimpyProc):
-            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable')
+            raise SkimpyError(self.original_form, 'application: ' + str(op_to_call) + ' is not callable',env)
         
         op_arguments = self.evaluate_subnodes(env,1,None)
         return op_to_call.apply(self.original_form,env,caller_id,op_arguments)
@@ -288,7 +300,7 @@ class SkimpyVariable(SkimpyForm):
     def make_eval(self,env):
         binding = env.find(self.varname)
         if binding is None:
-            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
+            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname,env)
 
         return (binding,EvalMessage.RESULT)
         yield None
@@ -296,7 +308,7 @@ class SkimpyVariable(SkimpyForm):
     def seval(self,env,caller_id):
         binding = env.find(self.varname)
         if binding is None:
-            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname)
+            raise SkimpyError(self.original_form, 'unbound variable in this context: ' + self.varname,env)
 
         return binding
     
@@ -374,7 +386,7 @@ def analyze_define(form):
                 argnames.append(parse.get_text(argname))
             
             proc_text = analyze_proc_body(form,form_subnodes)
-            def_expr = SkimpyLambda(form,argnames,proc_text)
+            def_expr = SkimpyLambda(form,argnames,proc_text,force_name=parse.get_text(var_token))
         else:
             var_token = defined_obj
             def_expr = next(form_subnodes)

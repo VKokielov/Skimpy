@@ -7,6 +7,7 @@ import os
 import fileinput
 import sys
 import time
+import serror
 from serror import SkimpyError
 
 def execute_code(text,env,interactive=False):
@@ -24,7 +25,7 @@ def run_file(env,filename):
 
     ptext = None
     with open(filename,'r') as prog_file:
-        ptext = prog_file.read()
+            ptext = prog_file.read()
 
     # NOTE:  We execute file inside the current environment, not the top-level
     execute_code(ptext,env,interactive=True)
@@ -50,6 +51,16 @@ if __name__ == "__main__":
         time1 = time.time()
         run_file(global_env,file_name)
         print ('total time to run: ' + str(time.time() - time1))
-    except SkimpyError as serr:
-        print (str(serr))
+    except SkimpyError as skimpy_err:
+        if skimpy_err.env is not None:
+            # TODO:  Make stack frames objects for readability (no other good reason)
+            # Trace through the procedures
+            print(str(skimpy_err))
+            print('Stack trace:')
+            for stack_frame in serror.generate_frames(skimpy_err.env):
+                print (str(stack_frame))
+        else:
+            print (str(skimpy_err))
+            
+            
 

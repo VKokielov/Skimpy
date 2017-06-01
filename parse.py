@@ -115,7 +115,15 @@ def skimpy_prescan(t_str):
     context = SkimpyPrescanContext(t_str)
     token_len = 0
 
+    in_comment = False
     for ch in t_str:
+        if ch == ';':
+            in_comment = True
+        elif ch == '\n':
+            in_comment = False
+
+        if in_comment:
+            continue
         # Category of next character as whitespace, identifier, or parenthesis
         char_cat = classify_char(ch)
 

@@ -3,6 +3,7 @@ import seval
 import parse
 import numbers
 from serror import SkimpyError
+from serror import StackFrame
 
 class SkimpyValue(object):
     def pythonify(self):
@@ -17,7 +18,7 @@ class SkimpyValue(object):
         else:
             return str(python_val)
 
-    def str_for_display(self,token):
+    def str_for_display(self,env):
         return str(self)
 
 class SkimpyProc(SkimpyValue):
@@ -53,8 +54,7 @@ class CompoundProc(SkimpyProc):
                 senv.bind_arglist(self.token,self.exec_env,my_host.arglist,self.values,rebind=True)
                 raise StopIteration ((my_host.text.make_eval(exec_env),seval.EvalMessage.CONTINUATION))
             else:
-                new_env = senv.bind_arglist(self.token,my_host.enc_env,my_host.arglist,self.values)
-                new_env.bind_private("_cp",self)         
+                new_env = senv.bind_arglist(self.token,my_host.enc_env,my_host.arglist,self.values)  
                 raise StopIteration ((my_host.text.make_eval(new_env),seval.EvalMessage.CONTINUATION))            
 
     def make_applier(self,token,exec_env,values):
@@ -67,16 +67,18 @@ class CompoundProc(SkimpyProc):
         # The 'call' function is all that's different between procedure types
         # The returned value is passed back to eval.
         # We are bootstrapping the return to Python.
-        
+ 
         if caller_id == self:
             # This is the same procedure.  Do a continuation
             # That is, rebind the arguments into the calling environment and raise a ContinuationException
             senv.bind_arglist(token,exec_env,self.arglist,values,rebind=True)
+            # The _cp remains the same
             new_text = seval.translate(self.text)  # As in seval, explicit translation to cache the analyzed text if it was not cached on the form
             self.text = new_text
             raise seval.ContinuationException(self.text)
         else:
             new_env = senv.bind_arglist(token,self.enc_env,self.arglist,values)
+            new_env.bind_private("_cp",StackFrame(self,token,exec_env))
             
             to_return,new_text = seval.skimpy_eval(self.text,new_env,self)
             self.text = new_text
@@ -86,8 +88,7 @@ class CompoundProc(SkimpyProc):
 
 # To users these are indistinguishable if 'apply' is used to call a procedure
 class PythonProc(SkimpyProc):
-    def __init__(self,enc_env,name,pyf,check_arg_count=None,check_arg_types=None,is_raw = False):
-        
+    def __init__(self,enc_env,name,pyf,check_arg_count=None,check_arg_types=None,is_raw = False):    
         super(PythonProc,self).__init__(enc_env,name,arglist=None,text=None)
         self.check_arg_count = check_arg_count
         self.check_arg_types = check_arg_types
@@ -106,6 +107,7 @@ class PythonProc(SkimpyProc):
         return [self.apply(token,exec_env,None,values), seval.EvalMessage.RESULT]
     
     def apply(self,token,exec_env,caller_id,values):
+        
         if self.check_arg_count is not None:
             if isinstance(self.check_arg_count,tuple):
                 min_args = self.check_arg_count[0]
@@ -115,9 +117,9 @@ class PythonProc(SkimpyProc):
                 max_args = self.check_arg_count
                 
             if min_args is not None and len(values) < min_args:
-                raise SkimpyError(token, 'too few arguments for builtin procedure ' + str(self.name))
+                raise SkimpyError(token, 'too few arguments for builtin procedure ' + str(self.name),exec_env)
             if max_args is not None and len(values) > max_args:
-                raise SkimpyError(token, 'too many arguments for builtin procedure ' + str(self.name))
+                raise SkimpyError(token, 'too many arguments for builtin procedure ' + str(self.name),exec_env)
 
         if self.check_arg_types is not None:
             # Zip helps here.  It stops checking only when either values or check_arg_types is exhausted
@@ -126,7 +128,7 @@ class PythonProc(SkimpyProc):
             for check_pair,value in zip(self.check_arg_types,values):
                 if check_pair[0] == '*' or not check_pair[1](value,idx):
                     raise SkimpyError(token,'argument ' + str(idx) + ': wrong argument type for builtin procedure ' + str(self.name)\
-                                      + '; expected ' + check_pair[0])
+                                      + '; expected ' + check_pair[0],exec_env)
                 idx += 1
             
         # Do not bother binding the values into the environment, it's wasted time
@@ -137,10 +139,10 @@ class PythonProc(SkimpyProc):
         if not self.is_raw:
             # Pythonify all values first.  Obviously slower, but much more convenient
             val_list = [val.pythonify() for val in values]
-            return skimpify(self.pyf(self.enc_env, token, *val_list))
+            return skimpify(self.pyf((self.enc_env,exec_env), token, *val_list))
         else:
             # In this case it's just a thin wrapper
-            return self.pyf(self.enc_env,token,values)
+            return self.pyf((self.enc_env,exec_env),token,values)
 
 class SkimpyNumber(SkimpyValue):
     def __init__(self,value):
@@ -175,6 +177,9 @@ class _SkimpyBool(SkimpyValue):
     def __bool__(self):
         return self.value
 
+    def __str__(self):
+        return "#t" if self.value else "#f"
+
 true_val = _SkimpyBool(True)
 false_val = _SkimpyBool(False)
 
@@ -202,6 +207,9 @@ class SkimpySymbol(SkimpyValue):
     def pythonify(self):
         return self.symbol_name  # as string
 
+class ListCycleError(Exception):
+    pass  # just a tag
+
 class SkimpyPair(SkimpyValue):
     # NOTE:  We don't Pythonify pairs.  x.car and x.cdr is not harder to type or read than x[0]/x[1].  It is arguably clearer here.
     def __init__(self,car,cdr):
@@ -209,10 +217,13 @@ class SkimpyPair(SkimpyValue):
         self.cdr = cdr
 
     def __str__(self):
-        return self.str_for_display(None)
+        return self.str_for_display()
 
-    def str_for_display(self,token):
-        return prettify_pair(token,self,detect_cycles=True)        
+    def str_for_display(self):
+        try:
+            return prettify_pair(self,detect_cycles=True)
+        except ListCycleError:
+            return '<list structure contains cycles>'
 
 # A value that doesn't count as a return, but has a string description
 class SkimpyNonReturn(SkimpyValue):
@@ -249,7 +260,7 @@ def skimpy_lister(first_pair):
         yield pair.car
         pair = pair.cdr
 
-def prettify_pair(command_token,pair,detect_cycles=False):
+def prettify_pair(pair,detect_cycles=False):
     # An extremely dumb pretty-printer for pairs.  Recursive, so
     #   1) limited by the Python stack
     #   2) strings will be allocated and discarded left and right
@@ -264,7 +275,7 @@ def prettify_pair(command_token,pair,detect_cycles=False):
         # Now deal with the pair
         if cycle_detector is not None:
             if obj in cycle_detector:
-                raise SkimpyError(command_token, "list structure contains cycles.")
+                raise ListCycleError()
             cycle_detector.add(obj)
 
         left = obj.car
@@ -354,7 +365,6 @@ def do_quote(error_token, quotable):
 
 # Consumer-style list builder
 def list_builder():
-
     element = (yield)
     # Treat first element specially
     if element is None:

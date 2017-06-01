@@ -157,6 +157,9 @@ def register_builtins(env):
                  check_arg_types=[('pair',check_pair)], is_raw=True)
 
     bind_builtin(env,'null?',make_predicate(is_empty_list),check_arg_count=1)
+    bind_builtin(env,'pair?',make_predicate(is_pair),check_arg_count=1)
+    bind_builtin(env,'atom?',make_predicate(lambda p: not is_pair(p)),check_arg_count=1)
+    bind_builtin(env,'not',lambda env,tok,v: not v,check_arg_count=1)
     bind_builtin(env,'eq?',is_eq,check_arg_count=2)
     # The list operations
     bind_builtin(env,'map',map_list,check_arg_count=2,

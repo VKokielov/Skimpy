@@ -54,10 +54,10 @@ def bind_arglist(call_token,env,arglist,values,rebind=False):
 
     # Note: when rebinding for a tail recursion, this check ensures that we don't leave any 'stale' arguments from the previous call
     if len(values) < len(arglist):
-        raise SkimpyError(call_token, 'too few arguments for procedure')
+        raise SkimpyError(call_token, 'too few arguments for procedure', env)
 
     if len(values) > len(arglist):
-        raise SkimpyError(call_token, 'too many arguments for procedure')
+        raise SkimpyError(call_token, 'too many arguments for procedure', env)
 
     if not rebind:
         bind_env = SkimpyEnvironment(env)
