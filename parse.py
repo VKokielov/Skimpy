@@ -291,7 +291,7 @@ def skimpy_scan(t_str):
     lp_stack = []  # stack of ScanLevel objects describing the tree
     
     operations = []
-    for token in skimpy_prescan(t_str):    
+    for token in skimpy_prescan(t_str):
         if token.text == "(":
             lp_stack.append(ScanLevel(token))
             operations.append(python_bind(sbuilder.push, token))
@@ -317,16 +317,18 @@ def skimpy_scan(t_str):
 
         # Update the level entry count.  If the token is implicit, pop again
         if lp_stack:
-            ccount = lp_stack[-1].count + 1
-            lp_stack[-1].count = ccount
-            if lp_stack[-1].implicit and ccount > 1:
-                lp_stack.pop()
-                operations.append(sbuilder.pop)
-
+            while lp_stack[-1].implicit:
+                ccount = lp_stack[-1].count + 1
+                lp_stack[-1].count = ccount
+                if ccount > 1:
+                    lp_stack.pop()
+                    operations.append(sbuilder.pop)                    
+                else:
+                    break
     if lp_stack:
         # Pop the token and report an error
         inparen = lp_stack.pop()
-        raise SkimpyError(inparen.l,inparen.c,'unmatched left parenthesis')
+        raise SkimpyError(inparen.token,'unmatched left parenthesis')
 
     # Now let's run the functions
     for op in operations:
