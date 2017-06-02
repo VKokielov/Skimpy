@@ -10,13 +10,18 @@ import time
 import serror
 from serror import SkimpyError
 
-def execute_code(text,env,interactive=False):
+def execute_code(text,env,recipient):
     tree = parse.skimpy_scan(text)
 
     for subnode in parse.generate_subnodes(tree):
-        result = seval.skimpy_eval(subnode,env)[0]
-        if interactive:
-            print ('>> ' + str(result) + '\n')
+        try:
+            result = seval.skimpy_eval(subnode,env)[0]
+            recipient(result)
+        except Exception as e:
+            recipient(e)
+
+def receive_to_print(eval_result):
+    print ('>> ' + str(eval_result) + '\n')
 
 def run_file(env,filename):
     # As above but interactive from the interpreter
@@ -28,7 +33,7 @@ def run_file(env,filename):
             ptext = prog_file.read()
 
     # NOTE:  We execute file inside the current environment, not the top-level
-    execute_code(ptext,env,interactive=True)
+    execute_code(ptext,env,receive_to_print)
 
 def prepare():
     # Creates a new global environment and adds bindings for
